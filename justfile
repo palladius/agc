@@ -1,9 +1,20 @@
 
- ~/git/antigravity-palladius-private-goodies/.agents/rules/carlessian-just
 
 
+default:
+	@just --list
 
+list: default
 
+test:
+	ruby -I lib:test test/test_agc.rb
+
+skills-equivalent:
+	bin/agc skills list
+
+agy-equivalent:
+	bin/agc all list --for agy -a
 
 antigravity-me:
-	antigravity . --help --add $GIC --add ~/git/skillume/
+	echo NO THIS JUST ADDS FOLDERS NOT READ ... antigravity . --add $GIC --add ~/git/skillume/
+	antigravity .

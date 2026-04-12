@@ -1,0 +1,499 @@
+#!/usr/bin/env ruby
+
+=begin
+✨ Antigravity Converged (AGC) ✨
+A unified CLI tool for managing skills, rules, workflows, and policies 
+across Antigravity, Gemini CLI, and OpenClaw.
+=end
+
+require 'pathname'
+require 'socket'
+require 'digest'
+require 'yaml'
+
+Encoding.default_external = Encoding::UTF_8
+
+# --- COLORS & EMOJIS ---
+C_FOLDER  = "\e[1;34m" # Bold Blue
+C_SKILL   = "\e[0;32m" # Green
+C_SYMLINK = "\e[0;36m" # Cyan
+C_MATCH   = "\e[1;33m" # Bold Yellow for match
+C_COMMENT = "\e[0;90m" # Grey
+C_SIZE    = "\e[0;90m" # Grey for line count
+C_VERSION = "\e[1;33m" # Bold Yellow for version
+C_BROKEN  = "\e[1;31m" # Red
+C_HASH    = "\e[0;35m" # Purple for hash
+C_WHITE   = "\e[1;37m" # White
+C_RESET   = "\e[0m"
+
+E_GLOBAL    = "🌍"
+E_LOCAL     = "📂"
+E_FOLDER    = "📁"
+E_RULE      = "📐"
+E_WORKFLOW  = "🔀"
+E_SYMLINK   = "🔗"
+E_SEARCH    = "🔎"
+E_BROKEN    = "❌"
+E_SPARKLE   = "✨"
+E_SHELL     = "💻"
+E_PYTHON    = "🐍"
+E_RUBY      = "💎"
+E_SHRUG     = "🤷"
+E_DICE      = "🎲"
+
+# --- FOLDERS CONFIGURATION ---
+def get_git_root
+  `git rev-parse --show-toplevel 2>/dev/null`.strip
+end
+
+def load_yaml_config
+  config_paths = [
+    "./.agc.yaml",
+    "~/.agc.yaml",
+    "~/.config/agc/config.yaml",
+    "./etc/riccardo_sample.yaml",
+    "~/git/agc/etc/riccardo_sample.yaml"
+  ].map { |p| File.expand_path(p) }
+  
+  found_path = config_paths.find { |p| File.exist?(p) }
+  
+  return nil unless found_path
+  begin
+    return YAML.load_file(found_path)
+  rescue
+    return nil
+  end
+end
+
+def build_folders
+  git_root = get_git_root
+  local_path = git_root.empty? ? Dir.pwd : git_root
+
+  yaml_data = load_yaml_config
+
+  if yaml_data && yaml_data['folders'] && !yaml_data['folders'].empty?
+    # Map YAML to the expected symbol-based structure
+    return yaml_data['folders'].map do |cfg|
+      path = cfg['path']
+      
+      # Substitute local dynamic paths natively
+      if path == '.local_git_gemini'
+         path = "#{local_path}/.gemini"
+      elsif path == '.local_git_agents'
+         path = "#{local_path}/.agents"
+      end
+
+      { 
+        path: path, 
+        comment: cfg['comment'], 
+        visibility: (cfg['visibility'] || []).map(&:to_sym), 
+        context: (cfg['context'] || 'global').to_sym,
+        name: cfg['name']
+      }
+    end
+  end
+
+  # The classic fallback memory list if NO configuration file resolves properly
+  [
+    { path: '~/.gemini/antigravity', comment: 'Global Antigravity settings', visibility: [:agy], context: :global },
+    { path: '~/.gemini', comment: 'Gemini policies', visibility: [:gc], context: :global },
+    { path: '~/.gemini/skills', comment: 'User-specific skills', visibility: [:gc, :agy, :oc], context: :global },
+    { path: '~/.agents', comment: 'Legacy Antigravity/GC System', visibility: [:gc, :agy], context: :global },
+    { path: '~/git/gemini-cli-palladius-private-goodies', comment: 'Private research and tools', visibility: [:gc, :agy, :oc], context: :global },
+    { path: '~/git/gemini-cli-palladius-public-goodies', comment: 'Publicly shared skills', visibility: [:gc, :agy, :oc], context: :global },
+    { path: '~/git/gemini-cli-custom-commands', comment: 'Standard custom command skills', visibility: [:gc, :agy, :oc], context: :global },
+    { path: '~/.openclaw/workspace', comment: 'OpenClaw workspace', visibility: [:oc], context: :global },
+    { path: '~/git/gemini-cli-g3', comment: 'Google3 skills', visibility: [], context: :global },
+    { path: "#{local_path}/.gemini", comment: 'Local repo .gemini config', visibility: [:gc, :agy, :oc], context: :local },
+    { path: "#{local_path}/.agents", comment: 'Local repo .agents config', visibility: [:gc, :agy, :oc], context: :local }
+  ]
+end
+
+# --- CORE LOGIC ---
+class AGC
+  def initialize(args)
+    @args = args
+    @options = { all: false, for: nil, verbose: false, fix_broken: false, context: nil }
+    @search_term = nil
+    @entity = nil
+    @action = 'list'
+    parse_args!
+  end
+
+  def run
+    puts "#{E_SPARKLE} Antigravity Converged (AGC) #{E_SPARKLE} [Entity: #{@entity || 'NONE'}]\n\n"
+    
+    if @entity.nil?
+      show_help
+      exit 1
+    end
+
+    if @search_term
+      puts "#{E_SEARCH} Searching for #{@entity} matching '#{C_MATCH}#{@search_term}#{C_RESET}'...\n\n"
+    elsif @options[:for]
+      puts "#{E_SEARCH} Showing #{@entity} visible to '#{C_MATCH}#{@options[:for]}#{C_RESET}'...\n\n"
+    end
+
+    case @entity
+    when 'skills', 'skill'
+      process_skills('skills')
+    when 'rules', 'rule'
+      process_file_entity('rules', E_RULE, '.md')
+    when 'workflows', 'workflow'
+      process_file_entity('workflows', E_WORKFLOW, '.md')
+    when 'custom_commands'
+      process_skills('commands')
+    when 'policies'
+      process_file_entity('policies', '👮', '.toml')
+    when 'all'
+      process_all
+    else
+      puts "Unknown entity: #{@entity}"
+      show_help
+      exit 1
+    end
+  end
+
+  private
+
+  def show_help
+    puts "Usage: agc <entity> [action] [search_term] [options]"
+    puts "\nEntities:"
+    puts "  all              List all entities for the current/selected surface"
+    puts "  skills           Manage GC/Agy/Claude skills"
+    puts "  rules            Manage Agy Rules"
+    puts "  workflows        Manage Agy Workflows"
+    puts "  custom_commands  Manage GC CustomCommands"
+    puts "  policies         Manage GC Policy Engine"
+    puts "\nOptions:"
+    puts "  -a, --all         Show all items (including broken links and hidden files)"
+    puts "  -f, --fix-broken  Automatically remove broken symlinks (for rules/workflows)"
+    puts "  --for <system>    Target system context (gc, agy, oc)"
+    puts "  --global          Show only globally configured items"
+    puts "  --local           Show only locally configured (workspace) items"
+    puts "  -h, --help        Show this help message"
+  end
+
+  def parse_args!
+    remaining = []
+    skip_next = false
+
+    @args.each_with_index do |arg, i|
+      if skip_next
+        skip_next = false
+        next
+      end
+      case arg
+      when '--help', '-h'
+        show_help
+        exit 0
+      when '--all', '-a', '--verbose', '-v'
+        @options[:all] = true
+        @options[:verbose] = true
+      when '--fix-broken-link', '--fix-broken-links', '-f'
+        @options[:fix_broken] = true
+      when '--global'
+        @options[:context] = :global
+      when '--local'
+        @options[:context] = :local
+      when '--for'
+        val = @args[i+1]
+        if val
+          @options[:for] = normalize_system(val)
+          skip_next = true
+        end
+      when /^--for=(.*)/
+        @options[:for] = normalize_system($1)
+      else
+        remaining << arg
+      end
+    end
+
+    @entity = remaining[0]
+    
+    # If the second arg is 'list' or 'search', treat it as action
+    idx = 1
+    if remaining[idx] && ['list', 'search'].include?(remaining[idx])
+      @action = remaining[idx]
+      idx += 1
+    end
+    
+    @search_term = remaining[idx]
+  end
+
+  def normalize_system(val)
+    val.downcase.gsub('antigravity', 'agy').gsub('geminicli', 'gc').gsub('openclaw', 'oc').gsub('openclaudio', 'oc').to_sym
+  end
+
+  def process_all
+    systems_to_check = case @options[:for]
+      when :gc then %w[commands skills policies]
+      when :agy then %w[rules skills workflows]
+      else %w[skills rules workflows commands policies]
+      end
+
+    hostname = Socket.gethostname
+    is_work_machine = ['derek', 'ricc-mac'].include?(hostname) || hostname.include?(".corp.google.com")
+    
+    seen_paths = []
+
+    build_folders.each do |config|
+      next if @options[:for] && !config[:visibility].include?(@options[:for])
+      next if @options[:context] && config[:context] != @options[:context]
+      
+      base_path = File.expand_path(config[:path])
+      next if seen_paths.include?(base_path)
+      seen_paths << base_path
+
+      folder_elements = []
+
+      systems_to_check.each do |sub_folder|
+        target_path = File.join(base_path, sub_folder)
+        target_path = base_path if config[:path].end_with?('.agents') && !File.directory?(target_path) && ['skills', 'commands'].include?(sub_folder) 
+
+        next unless File.directory?(target_path)
+        dir = Pathname.new(target_path)
+
+        if ['skills', 'commands'].include?(sub_folder)
+          items = dir.children.select { |c| c.directory? || c.symlink? }.sort_by(&:basename)
+          items = items.select { |s| s.basename.to_s.downcase.include?(@search_term.downcase) } if @search_term
+          items = items.reject { |s| s.basename.to_s.start_with?('openclaudio-') } if is_work_machine && !@options[:all]
+          items.each { |s| folder_elements << { type: :skill, path: s, sub_folder: sub_folder } }
+        else
+          ext = sub_folder == 'policies' ? '.toml' : '.md'
+          emoji = case sub_folder
+                  when 'rules' then E_RULE
+                  when 'workflows' then E_WORKFLOW
+                  when 'policies' then '👮'
+                  end
+          items = dir.children.select { |c| (c.file? || c.symlink?) && c.extname == ext }.sort_by(&:basename)
+          items = items.select { |c| c.basename.to_s.downcase.include?(@search_term.downcase) } if @search_term
+          items.each { |item| folder_elements << { type: :file, path: item, sub_folder: sub_folder, emoji: emoji } }
+        end
+      end
+      
+      next if folder_elements.empty?
+      
+      short_path = base_path.sub(ENV['HOME'], '~')
+      context_emoji = config[:context] == :global ? E_GLOBAL : E_LOCAL
+      name = config[:name] || config[:comment]
+      puts "#{C_FOLDER}#{context_emoji} #{name} [#{short_path}]#{C_RESET}"
+
+      folder_elements.each do |element|
+        prefix = "#{element[:sub_folder]}/".rjust(10)
+        if element[:type] == :skill
+           process_single_skill(element[:path], prefix)
+        else
+           process_single_markdown(element[:path], element[:emoji], prefix)
+        end
+      end
+      puts ""
+    end
+  end
+
+  def process_skills(sub_folder)
+    hostname = Socket.gethostname
+    is_work_machine = ['derek', 'ricc-mac'].include?(hostname) || hostname.include?(".corp.google.com")
+    seen_paths = []
+
+    build_folders.each do |config|
+      next if @options[:for] && !config[:visibility].include?(@options[:for])
+      next if @options[:context] && config[:context] != @options[:context]
+      
+      # For skills or commands, append the required subfolder
+      target_path = File.expand_path(File.join(config[:path], sub_folder))
+      target_path = File.expand_path(config[:path]) if config[:path].end_with?('.agents') # Support .agents/skills implicitly if needed, but let's be explicit
+      target_path = File.expand_path(File.join(config[:path], sub_folder)) unless target_path.end_with?(sub_folder)
+
+      expanded_path = target_path
+      next if seen_paths.include?(expanded_path)
+      seen_paths << expanded_path
+
+      folder = Pathname.new(expanded_path)
+      next unless folder.directory?
+
+      skills = folder.children.select { |c| c.directory? || c.symlink? }.sort_by(&:basename)
+      skills = skills.select { |s| s.basename.to_s.downcase.include?(@search_term.downcase) } if @search_term
+      skills = skills.reject { |s| s.basename.to_s.start_with?('openclaudio-') } if is_work_machine && !@options[:all]
+
+      next if skills.empty?
+
+      # Header
+      header = "#{C_FOLDER}#{config[:context] == :global ? E_GLOBAL : E_LOCAL} #{config[:path]}/#{sub_folder}#{C_RESET}"
+      if config[:comment]
+        comment_text = config[:comment]
+        if config[:context] == :local
+          pwd = Dir.pwd.gsub(ENV['HOME'], '~')
+          comment_text += " #{C_WHITE}on#{C_RESET} #{C_SYMLINK}#{pwd}#{C_COMMENT}"
+        end
+        header += " #{C_COMMENT}# #{comment_text}#{C_RESET}"
+      end
+      puts header
+
+      skills.each do |skill|
+        process_single_skill(skill)
+      end
+      puts ""
+    end
+  end
+
+  def process_single_skill(skill, prefix = nil)
+    skill_name = skill.basename.to_s
+    is_link = skill.symlink?
+    
+    skill_md = skill.join("SKILL.md")
+    version = nil
+    line_count = 0
+    shrug = false
+    content = ""
+    
+    if skill_md.exist?
+      content = skill_md.read
+      line_count = content.lines.count
+      if content =~ /^\s*version:\s*(.*)$/
+        version = $1.strip
+      end
+    else
+      shrug = true
+    end
+
+    color = shrug ? C_COMMENT : (is_link ? C_SYMLINK : C_SKILL)
+    emoji = is_link ? E_SYMLINK : E_DICE
+
+    hash_str = ""
+    if @options[:all]
+      seed = content.empty? ? skill_name : content
+      hash_val = Digest::MD5.hexdigest(seed)[0..4]
+      hash_str = "#{C_HASH}##{hash_val}#{C_RESET} "
+    end
+
+    lang_emojis = ""
+    files = []
+    begin
+      target = is_link ? skill.realpath : skill
+      files = target.children if target.directory?
+    rescue
+    end
+    
+    lang_emojis += E_SHELL  if files.any? { |f| %w[.sh .bash].include?(f.extname) }
+    lang_emojis += E_PYTHON if files.any? { |f| f.extname == '.py' }
+    lang_emojis += E_RUBY   if files.any? { |f| f.extname == '.rb' }
+
+    metadata = ""
+    metadata += " #{C_SIZE}#{line_count}L#{C_RESET}" if line_count > 0
+    metadata += " #{C_VERSION}v#{version}#{C_RESET}" if version
+    metadata += " #{E_SHRUG}" if shrug
+    metadata += " #{lang_emojis}" if lang_emojis != ""
+
+    highlighted = @search_term ? skill_name.gsub(/(#{Regexp.escape(@search_term)})/i, "#{C_MATCH}\\1#{color}") : skill_name
+    display_name = prefix ? "#{C_RESET}#{prefix}#{color}#{highlighted}" : highlighted
+    puts "  #{emoji} #{hash_str}#{color}#{display_name}#{C_RESET}#{metadata}"
+  end
+
+  def process_file_entity(folder_name, emoji, ext)
+    total_broken_links = 0
+    seen_paths = []
+
+    build_folders.each do |config|
+      next if @options[:for] && !config[:visibility].include?(@options[:for])
+      next if @options[:context] && config[:context] != @options[:context]
+      
+      expanded_path = File.expand_path(File.join(config[:path], folder_name))
+      next if seen_paths.include?(expanded_path)
+      seen_paths << expanded_path
+
+      dir = Pathname.new(expanded_path)
+      next unless dir.directory?
+
+      items = dir.children.select { |c| (c.file? || c.symlink?) && c.extname == ext }.sort_by(&:basename)
+      items = items.select { |c| c.basename.to_s.downcase.include?(@search_term.downcase) } if @search_term
+
+      next if items.empty?
+
+      short_path = expanded_path.sub(ENV['HOME'], '~')
+      context_emoji = config[:context] == :global ? E_GLOBAL : E_LOCAL
+      puts "#{C_FOLDER}#{context_emoji} #{config[:comment]} [#{short_path}]#{C_RESET}"
+
+      items.each do |path|
+        broken_detected = process_single_markdown(path, emoji)
+        total_broken_links += 1 if broken_detected
+      end
+      puts ""
+    end
+
+    if total_broken_links > 0 && !@options[:fix_broken]
+      puts "💡 #{C_MATCH}Tip: Detected #{total_broken_links} broken link(s)! Run `agc #{@entity} list --fix-broken` to automatically clean them up.#{C_RESET}"
+    end
+  end
+
+  def process_single_markdown(path, type_emoji, prefix = nil)
+    basename = path.basename.to_s
+    is_link = path.symlink?
+    color = is_link ? C_SYMLINK : C_SKILL
+    
+    target_str = ""
+    if is_link && @options[:verbose]
+      begin
+        target_raw = File.readlink(path)
+        target_short = target_raw.sub(ENV['HOME'], '~')
+        target_str = " #{C_COMMENT}-> #{target_short}#{C_RESET}"
+      rescue
+      end
+    end
+    
+    line_count = 0
+    version = nil
+    broken = false
+    
+    begin
+      target_file = is_link ? path.realpath : path
+      if target_file.exist?
+        content = File.read(target_file)
+        line_count = content.lines.count
+        
+        yaml_block = content[/^---\s*\n(.*?)\n---(\s*\n|$)/m, 1]
+        if yaml_block
+          parsed = YAML.safe_load(yaml_block) rescue {}
+          ver = parsed.dig('metadata', 'version') || parsed['version']
+          version = ver.to_s if ver
+        end
+      else
+        broken = true
+      end
+    rescue Errno::ENOENT
+      broken = true
+    rescue => e
+      # Error reading
+    end
+    
+    if broken
+      if @options[:fix_broken] && is_link
+        begin
+          File.unlink(path)
+          color = C_BROKEN
+          metadata = " #{E_BROKEN} Fixed (removed) broken link!"
+        rescue
+          color = C_BROKEN
+          metadata = " #{E_BROKEN} Broken Link (failed to remove)!"
+        end
+      else
+        color = C_BROKEN
+        metadata = " #{E_BROKEN} Broken Link!"
+      end
+    else
+      metadata = line_count > 0 ? " #{C_SIZE}#{line_count}L#{C_RESET}" : ""
+      metadata += " #{C_VERSION}v#{version}#{C_RESET}" if version
+    end
+
+    highlighted = @search_term ? basename.gsub(/(#{Regexp.escape(@search_term)})/i, "#{C_MATCH}\\1#{color}") : basename
+    display_name = prefix ? "#{C_RESET}#{prefix}#{color}#{highlighted}" : "#{C_RESET}  #{color}#{highlighted}"
+
+    puts "  #{type_emoji}#{is_link ? E_SYMLINK : ' '} #{display_name}#{C_RESET}#{metadata}#{target_str}"
+    
+    broken
+  end
+end
+
+if __FILE__ == $PROGRAM_NAME
+  AGC.new(ARGV).run
+end

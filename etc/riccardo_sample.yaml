@@ -1,0 +1,60 @@
+# Kanon di Gemini (AGC) Configuration File
+# 
+# Copy this file to ~/.agc.yaml to override the default hardcoded workspaces
+# and configure surfaces explicitly!
+
+folders:
+  - path: "~/.gemini/antigravity"
+    comment: "Global Antigravity settings"
+    visibility: ["agy"]
+    context: "global"
+
+  - path: "~/.gemini"
+    comment: "Gemini policies"
+    visibility: ["gc"]
+    context: "global"
+
+  - path: "~/.gemini/skills"
+    comment: "User-specific skills"
+    visibility: ["gc", "agy", "oc"]
+    context: "global"
+
+  - path: "~/.agents"
+    comment: "Legacy Antigravity/GC System"
+    visibility: ["gc", "agy"]
+    context: "global"
+
+  - path: "~/git/gemini-cli-palladius-private-goodies"
+    comment: "Private research and tools"
+    visibility: ["gc", "agy", "oc"]
+    context: "global"
+
+  - path: "~/git/gemini-cli-palladius-public-goodies"
+    comment: "Publicly shared skills"
+    visibility: ["gc", "agy", "oc"]
+    context: "global"
+
+  - path: "~/git/gemini-cli-custom-commands"
+    comment: "Standard custom command skills"
+    visibility: ["gc", "agy", "oc"]
+    context: "global"
+
+  - path: "~/.openclaw/workspace"
+    comment: "OpenClaw workspace"
+    visibility: ["oc"]
+    context: "global"
+
+  - path: "~/git/gemini-cli-g3"
+    comment: "Google3 skills"
+    visibility: []
+    context: "global"
+
+  - path: ".local_git_gemini"  # Dynamic fallback injected usually
+    comment: "Local repo .gemini config"
+    visibility: ["gc", "agy", "oc"]
+    context: "local"
+
+  - path: ".local_git_agents" # Dynamic fallback injected usually
+    comment: "Local repo .agents config"
+    visibility: ["gc", "agy", "oc"]
+    context: "local"

@@ -33,7 +33,7 @@ we need to have an import function, something that subsumes the skill/policy/wha
 
 ## Surface
 
-There should be a way to say "I'm using antigravity - show me all I should care about with this". And same with Gemini cLI. Maybe some `agc --surface antigravity` or `agc --surface gemini-cli` or `agc --surface openclaw` adn then "all show" ?
+There should be a way to say "I'm using antigravity - show me all I should care about with this". And same with Gemini cLI. Maybe some `agc --surface antigravity` or `agc --surface gemini-cli` and then "all show" ?
 
 ## Referece
 

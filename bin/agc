@@ -3,13 +3,14 @@
 =begin
 ✨ Antigravity Converged (AGC) ✨
 A unified CLI tool for managing skills, rules, workflows, and policies 
-across Antigravity, Gemini CLI, and OpenClaw.
+across Antigravity and Gemini CLI.
 =end
 
 require 'pathname'
 require 'socket'
 require 'digest'
 require 'yaml'
+require 'set'
 
 Encoding.default_external = Encoding::UTF_8
 
@@ -69,11 +70,21 @@ def build_folders
   git_root = get_git_root
   local_path = git_root.empty? ? Dir.pwd : git_root
 
+  official_folders = [
+    { path: '~/.gemini/antigravity', comment: 'Global Antigravity settings', visibility: [:agy], context: :global },
+    { path: '~/.gemini', comment: 'Gemini policies', visibility: [:gc], context: :global },
+    { path: '~/.gemini/skills', comment: 'User-specific skills', visibility: [:gc, :agy], context: :global },
+    { path: '~/.agents', comment: 'Legacy Antigravity/GC System', visibility: [:gc, :agy], context: :global },
+    { path: "#{local_path}/.gemini", comment: 'Local repo .gemini config', visibility: [:gc, :agy], context: :local },
+    { path: "#{local_path}/.agents", comment: 'Local repo .agents config', visibility: [:gc, :agy], context: :local }
+  ]
+
   yaml_data = load_yaml_config
+  custom_folders = []
 
   if yaml_data && yaml_data['folders'] && !yaml_data['folders'].empty?
     # Map YAML to the expected symbol-based structure
-    return yaml_data['folders'].map do |cfg|
+    custom_folders = yaml_data['folders'].map do |cfg|
       path = cfg['path']
       
       # Substitute local dynamic paths natively
@@ -93,20 +104,23 @@ def build_folders
     end
   end
 
-  # The classic fallback memory list if NO configuration file resolves properly
-  [
-    { path: '~/.gemini/antigravity', comment: 'Global Antigravity settings', visibility: [:agy], context: :global },
-    { path: '~/.gemini', comment: 'Gemini policies', visibility: [:gc], context: :global },
-    { path: '~/.gemini/skills', comment: 'User-specific skills', visibility: [:gc, :agy, :oc], context: :global },
-    { path: '~/.agents', comment: 'Legacy Antigravity/GC System', visibility: [:gc, :agy], context: :global },
-    { path: '~/git/gemini-cli-palladius-private-goodies', comment: 'Private research and tools', visibility: [:gc, :agy, :oc], context: :global },
-    { path: '~/git/gemini-cli-palladius-public-goodies', comment: 'Publicly shared skills', visibility: [:gc, :agy, :oc], context: :global },
-    { path: '~/git/gemini-cli-custom-commands', comment: 'Standard custom command skills', visibility: [:gc, :agy, :oc], context: :global },
-    { path: '~/.openclaw/workspace', comment: 'OpenClaw workspace', visibility: [:oc], context: :global },
-    { path: '~/git/gemini-cli-g3', comment: 'Google3 skills', visibility: [], context: :global },
-    { path: "#{local_path}/.gemini", comment: 'Local repo .gemini config', visibility: [:gc, :agy, :oc], context: :local },
-    { path: "#{local_path}/.agents", comment: 'Local repo .agents config', visibility: [:gc, :agy, :oc], context: :local }
-  ]
+  # Merge them, prioritizing YAML (user) overrides by adding them first, or maybe official first?
+  # Usually user overrides should take precedence so let's put custom folders first in the merge, 
+  # or official first and custom afterwards because the iteration order determines output order.
+  # Let's put official first, then custom.
+  all_folders = official_folders + custom_folders
+  unique_folders = []
+  seen_paths = Set.new
+  
+  all_folders.each do |f|
+    expanded = File.expand_path(f[:path])
+    unless seen_paths.include?(expanded)
+      seen_paths.add(expanded)
+      unique_folders << f
+    end
+  end
+
+  unique_folders
 end
 
 # --- CORE LOGIC ---
@@ -136,7 +150,11 @@ class AGC
 
     case @entity
     when 'skills', 'skill'
-      process_skills('skills')
+      if @action == 'install'
+        install_skill(@search_term, @install_target)
+      else
+        process_skills('skills')
+      end
     when 'rules', 'rule'
       process_file_entity('rules', E_RULE, '.md')
     when 'workflows', 'workflow'
@@ -165,10 +183,14 @@ class AGC
     puts "  workflows        Manage Agy Workflows"
     puts "  custom_commands  Manage GC CustomCommands"
     puts "  policies         Manage GC Policy Engine"
+    puts "\nActions:"
+    puts "  list             (Default) List entities"
+    puts "  search <term>    Search entities for a specific term"
+    puts "  install <name> [dir] Install a skill by symlinking it (default dir: .). Global via --global"
     puts "\nOptions:"
     puts "  -a, --all         Show all items (including broken links and hidden files)"
     puts "  -f, --fix-broken  Automatically remove broken symlinks (for rules/workflows)"
-    puts "  --for <system>    Target system context (gc, agy, oc)"
+    puts "  --for <system>    Target system context (gc, agy)"
     puts "  --global          Show only globally configured items"
     puts "  --local           Show only locally configured (workspace) items"
     puts "  -h, --help        Show this help message"
@@ -211,18 +233,19 @@ class AGC
 
     @entity = remaining[0]
     
-    # If the second arg is 'list' or 'search', treat it as action
+    # If the second arg is an action, capture it
     idx = 1
-    if remaining[idx] && ['list', 'search'].include?(remaining[idx])
+    if remaining[idx] && ['list', 'search', 'install'].include?(remaining[idx])
       @action = remaining[idx]
       idx += 1
     end
     
     @search_term = remaining[idx]
+    @install_target = remaining[idx + 1] if @action == 'install'
   end
 
   def normalize_system(val)
-    val.downcase.gsub('antigravity', 'agy').gsub('geminicli', 'gc').gsub('openclaw', 'oc').gsub('openclaudio', 'oc').to_sym
+    val.downcase.gsub('antigravity', 'agy').gsub('geminicli', 'gc').to_sym
   end
 
   def process_all
@@ -289,6 +312,141 @@ class AGC
       end
       puts ""
     end
+  end
+
+  def install_skill(skill_name, target_dir)
+    require 'fileutils'
+    target_dir ||= get_git_root
+    target_dir = Dir.pwd if target_dir.empty?
+
+    if skill_name.nil? || skill_name.empty?
+      puts "#{C_BROKEN}❌ Error: Please specify the skill name to install.#{C_RESET}"
+      exit 1
+    end
+
+    # Step 1: Find candidates
+    candidates = []
+    seen_paths = []
+    
+    build_folders.each do |config|
+      %w[skills commands].each do |sub_folder|
+        search_path = File.expand_path(File.join(config[:path], sub_folder))
+        search_path = File.expand_path(config[:path]) if config[:path].end_with?('.agents') # legacy
+        search_path = File.expand_path(File.join(config[:path], sub_folder)) unless search_path.end_with?(sub_folder)
+        
+        next if seen_paths.include?(search_path)
+        seen_paths << search_path
+        
+        dir = Pathname.new(search_path)
+        next unless dir.directory?
+
+        dir.children.each do |c|
+          if (c.directory? || c.symlink?) && c.basename.to_s == skill_name
+            candidates << c
+          end
+        end
+      end
+    end
+
+    if candidates.empty?
+      puts "#{E_BROKEN} No existing skills found named '#{C_MATCH}#{skill_name}#{C_RESET}' across known folders."
+      exit 1
+    end
+
+    # Group by real vs symlink
+    real_copies = candidates.reject(&:symlink?)
+    symlinks = candidates.select(&:symlink?)
+
+    source_path = nil
+    options = real_copies + symlinks # real ones first
+
+    if options.size == 1
+      source_path = options.first
+    else
+      puts "\n#{E_SPARKLE} Found multiple candidates for #{C_MATCH}#{skill_name}#{C_RESET}:"
+      options.each_with_index do |opt, i|
+        type_str = opt.symlink? ? "#{E_SYMLINK} (symlink -> #{opt.realpath})" : "#{E_FOLDER} (original)"
+        puts "  #{C_VERSION}[#{i + 1}]#{C_RESET} #{opt.to_s.sub(ENV['HOME'], '~')} #{type_str}"
+      end
+      print "\nSelect source to install [1]: "
+      sel = $stdin.gets.strip
+      selected_index = sel.empty? ? 0 : sel.to_i - 1
+      if selected_index < 0 || selected_index >= options.size
+        puts "#{C_BROKEN}Invalid selection.#{C_RESET}"
+        exit 1
+      end
+      source_path = options[selected_index]
+    end
+    
+    # Resolve real path to link to the original if source is a symlink
+    source_to_link = source_path
+    if source_path.symlink?
+      begin
+        source_to_link = source_path.realpath
+      rescue
+        # if broken link, just use it or it will fail later
+      end
+    end
+
+    puts "\n#{C_FOLDER}Selected source:#{C_RESET} #{source_to_link}"
+
+    # Step 2: Determine target destinations
+    destinations = []
+    
+    # Are we targeting global or local?
+    is_global = @options[:context] == :global
+    base_dir = is_global ? ENV['HOME'] : File.expand_path(target_dir)
+
+    target_systems = []
+    if @options[:for]
+      target_systems << @options[:for]
+    else
+      target_systems = [:gc, :agy]
+    end
+
+    target_systems.each do |sys|
+      if sys == :gc
+        if is_global
+          destinations << File.join(base_dir, '.gemini/skills', skill_name)
+        else
+          destinations << File.join(base_dir, '.gemini/skills', skill_name)
+        end
+      elsif sys == :agy
+        if is_global
+          destinations << File.join(base_dir, '.agents/skills', skill_name)
+        else
+          destinations << File.join(base_dir, '.agents/skills', skill_name)
+        end
+      end
+    end
+
+    puts "\n#{E_SYMLINK} #{C_SYMLINK}The following symlinks will be created/updated:#{C_RESET}"
+    destinations.each do |dest|
+      status = File.exist?(dest) || File.symlink?(dest) ? "#{C_MATCH}(will overwrite/update existing)#{C_RESET}" : "#{C_SKILL}(new)#{C_RESET}"
+      puts "  -> #{dest.sub(ENV['HOME'], '~')} #{status}"
+    end
+
+    print "\n#{C_VERSION}Proceed with installation? [Y/n]: #{C_RESET}"
+    answer = $stdin.gets.strip.downcase
+    if answer == 'n'
+      puts "Aborted."
+      exit 0
+    end
+
+    # Execute
+    destinations.each do |dest|
+      parent = File.dirname(dest)
+      FileUtils.mkdir_p(parent) unless File.directory?(parent)
+      
+      if File.symlink?(dest) || File.exist?(dest)
+        File.unlink(dest)
+      end
+      
+      File.symlink(source_to_link, dest)
+      puts "#{C_SKILL}✓ Created:#{C_RESET} #{dest.sub(ENV['HOME'], '~')}"
+    end
+    
+    puts "\n#{E_SPARKLE} Successfully installed #{C_MATCH}#{skill_name}#{C_RESET}."
   end
 
   def process_skills(sub_folder)

@@ -27,6 +27,8 @@ I think the right place is to have some sort of YAML configuration file, default
 
 For long running TODOs use GH Issues FTW.
 
+New functionalities should go into the USER MANUAL.md
+
 ## Import 
 
 we need to have an import function, something that subsumes the skill/policy/whatevs from position X into some designated subsumption folder. We might have that folder in the YAML file, or maybe N folders (like public folder, privte folder, ,,) and have the tool propose those folders if >1 ? Just thinking out loud here.

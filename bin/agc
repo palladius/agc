@@ -151,18 +151,34 @@ class AGC
     case @entity
     when 'skills', 'skill'
       if @action == 'install'
-        install_skill(@search_term, @install_target)
+        install_item(@search_term, @install_target, 'skills')
       else
         process_skills('skills')
       end
     when 'rules', 'rule'
-      process_file_entity('rules', E_RULE, '.md')
+      if @action == 'install'
+        install_item(@search_term, @install_target, 'rules')
+      else
+        process_file_entity('rules', E_RULE, '.md')
+      end
     when 'workflows', 'workflow'
-      process_file_entity('workflows', E_WORKFLOW, '.md')
+      if @action == 'install'
+        install_item(@search_term, @install_target, 'workflows')
+      else
+        process_file_entity('workflows', E_WORKFLOW, '.md')
+      end
     when 'custom_commands'
-      process_skills('commands')
+      if @action == 'install'
+        install_item(@search_term, @install_target, 'commands')
+      else
+        process_skills('commands')
+      end
     when 'policies'
-      process_file_entity('policies', '👮', '.toml')
+      if @action == 'install'
+        install_item(@search_term, @install_target, 'policies')
+      else
+        process_file_entity('policies', '👮', '.toml')
+      end
     when 'all'
       process_all
     else
@@ -194,6 +210,9 @@ class AGC
     puts "  --global          Show only globally configured items"
     puts "  --local           Show only locally configured (workspace) items"
     puts "  -h, --help        Show this help message"
+    puts "\nExamples:"
+    puts "  agc skills install journal-image-manager .            # Install a skill locally"
+    puts "  agc rules install carlessian-justfile.md --global     # Install a rule globally"
   end
 
   def parse_args!
@@ -314,13 +333,13 @@ class AGC
     end
   end
 
-  def install_skill(skill_name, target_dir)
+  def install_item(item_name, target_dir, entity_type)
     require 'fileutils'
     target_dir ||= get_git_root
     target_dir = Dir.pwd if target_dir.empty?
 
-    if skill_name.nil? || skill_name.empty?
-      puts "#{C_BROKEN}❌ Error: Please specify the skill name to install.#{C_RESET}"
+    if item_name.nil? || item_name.empty?
+      puts "#{C_BROKEN}❌ Error: Please specify the #{entity_type} name to install.#{C_RESET}"
       exit 1
     end
 
@@ -329,27 +348,29 @@ class AGC
     seen_paths = []
     
     build_folders.each do |config|
-      %w[skills commands].each do |sub_folder|
-        search_path = File.expand_path(File.join(config[:path], sub_folder))
-        search_path = File.expand_path(config[:path]) if config[:path].end_with?('.agents') # legacy
-        search_path = File.expand_path(File.join(config[:path], sub_folder)) unless search_path.end_with?(sub_folder)
-        
-        next if seen_paths.include?(search_path)
-        seen_paths << search_path
-        
-        dir = Pathname.new(search_path)
-        next unless dir.directory?
+      search_path = File.expand_path(File.join(config[:path], entity_type))
+      search_path = File.expand_path(config[:path]) if config[:path].end_with?('.agents') && ['skills', 'commands'].include?(entity_type)
+      search_path = File.expand_path(File.join(config[:path], entity_type)) unless search_path.end_with?(entity_type)
+      
+      next if seen_paths.include?(search_path)
+      seen_paths << search_path
+      
+      dir = Pathname.new(search_path)
+      next unless dir.directory?
 
-        dir.children.each do |c|
-          if (c.directory? || c.symlink?) && c.basename.to_s == skill_name
-            candidates << c
-          end
+      dir.children.each do |c|
+        is_match = false
+        if ['skills', 'commands'].include?(entity_type)
+          is_match = (c.directory? || c.symlink?) && c.basename.to_s == item_name
+        else
+          is_match = (c.file? || c.symlink?) && c.basename.to_s == item_name
         end
+        candidates << c if is_match
       end
     end
 
     if candidates.empty?
-      puts "#{E_BROKEN} No existing skills found named '#{C_MATCH}#{skill_name}#{C_RESET}' across known folders."
+      puts "#{E_BROKEN} No existing #{entity_type.chomp('s')} found named '#{C_MATCH}#{item_name}#{C_RESET}' across known folders."
       exit 1
     end
 
@@ -363,7 +384,7 @@ class AGC
     if options.size == 1
       source_path = options.first
     else
-      puts "\n#{E_SPARKLE} Found multiple candidates for #{C_MATCH}#{skill_name}#{C_RESET}:"
+      puts "\n#{E_SPARKLE} Found multiple candidates for #{C_MATCH}#{item_name}#{C_RESET}:"
       options.each_with_index do |opt, i|
         type_str = opt.symlink? ? "#{E_SYMLINK} (symlink -> #{opt.realpath})" : "#{E_FOLDER} (original)"
         puts "  #{C_VERSION}[#{i + 1}]#{C_RESET} #{opt.to_s.sub(ENV['HOME'], '~')} #{type_str}"
@@ -406,17 +427,9 @@ class AGC
 
     target_systems.each do |sys|
       if sys == :gc
-        if is_global
-          destinations << File.join(base_dir, '.gemini/skills', skill_name)
-        else
-          destinations << File.join(base_dir, '.gemini/skills', skill_name)
-        end
+        destinations << File.join(base_dir, ".gemini/#{entity_type}", item_name)
       elsif sys == :agy
-        if is_global
-          destinations << File.join(base_dir, '.agents/skills', skill_name)
-        else
-          destinations << File.join(base_dir, '.agents/skills', skill_name)
-        end
+        destinations << File.join(base_dir, ".agents/#{entity_type}", item_name)
       end
     end
 
@@ -446,7 +459,7 @@ class AGC
       puts "#{C_SKILL}✓ Created:#{C_RESET} #{dest.sub(ENV['HOME'], '~')}"
     end
     
-    puts "\n#{E_SPARKLE} Successfully installed #{C_MATCH}#{skill_name}#{C_RESET}."
+    puts "\n#{E_SPARKLE} Successfully installed #{C_MATCH}#{item_name}#{C_RESET}."
   end
 
   def process_skills(sub_folder)

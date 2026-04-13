@@ -6,10 +6,13 @@
 
 ## Key Features
 
+- **Rich CLI Output:** Visualizes entities with clear color-coding (e.g., distinguishing **symlinks**), and displays **skill size**, **version**, and **languages used**.
 - **Unified Management:** Manage entities for both Antigravity and Gemini CLI.
 - **Entity Discovery:** Easily list and search for skills, rules, and workflows.
 - **Smart Installation:** Automates symlink management for local and global installations.
 - **Extensible:** Configurable via YAML to support custom folder structures.
+
+![AGC CLI Screenshot](doc/agc-screenshot.png)
 
 ## Installation
 
@@ -41,6 +44,8 @@ To install `agc` and make it available in your shell:
 List all available skills:
 ```bash
 agc skills list
+agc skills banana # Searches for skills with 'banana' in the name
+agc skills install nano-banana-ricc 
 ```
 
 Install a skill globally:

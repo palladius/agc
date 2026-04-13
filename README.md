@@ -40,6 +40,16 @@ To install `agc` and make it available in your shell:
 ### Prerequisites
 - **Ruby:** `agc` is written in Ruby and requires a modern Ruby environment.
 
+## Configuration
+
+`agc` uses a YAML configuration file to discover your specific base directories. You can easily get started by copying the provided sample configuration:
+
+```bash
+cp etc/riccardo_sample.yaml ~/.agc.yaml
+```
+
+Once copied, open `~/.agc.yaml` in your favorite editor and modify the `folders` list to point to your actual Git repositories and entity directories. `agc` also supports project-level config (`./.agc.yaml`) and XDG standard paths (`~/.config/agc/config.yaml`).
+
 ## Quick Start
 
 List all available skills:
@@ -61,3 +71,13 @@ For more detailed usage, please refer to the [User Manual](USER_MANUAL.md).
 - **Antigravity Rules and Workflows:** [Official Docs](https://antigravity.google/docs/rules-workflows)
 - **AGC User Manual:** [USER_MANUAL.md](USER_MANUAL.md)
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
+
+---
+## Project Identity
+
+<p align="center">
+  <img src="ag_gc_logo.png" alt="AG/GC Logo" width="50%">
+</p>
+
+**Name:** AG⚡GC (contracted to `AGC`)
+**Codename:** 双子座のカノン (*Gemini no Kanon*)

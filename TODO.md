@@ -1,4 +1,4 @@
-* [ ] Logo Idea: Create an AC/DC inspired logo with AG/GC
+* [x] Logo Idea: Create an AC/DC inspired logo with AG/GC
 
 
 * [x] Enable policy engine reading. ~/.gemini/policies/ and use police moji for it and count rules :)

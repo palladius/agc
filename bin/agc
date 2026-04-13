@@ -422,7 +422,14 @@ class AGC
     if @options[:for]
       target_systems << @options[:for]
     else
-      target_systems = [:gc, :agy]
+      case entity_type
+      when 'rules', 'workflows'
+        target_systems = [:agy]
+      when 'policies', 'commands'
+        target_systems = [:gc]
+      else
+        target_systems = [:gc, :agy]
+      end
     end
 
     target_systems.each do |sys|

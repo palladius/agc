@@ -4,8 +4,6 @@
 
 Essentially, it's a CLI tool that discovers all relevant assets across your known directories and makes it easy to install or symlink them from your base repositories into your global or local workspaces.
 
-**Codename:** 双子座のカノン?, Jemini no Kanon
-
 ## Key Features
 
 - **Rich CLI Output:** Visualizes entities with clear color-coding (e.g., distinguishing **symlinks**), and displays **skill size**, **version**, and **languages used**.
@@ -13,7 +11,9 @@ Essentially, it's a CLI tool that discovers all relevant assets across your know
 - **Smart Installation:** Automates symlink management, easily linking items from your base folders to local (`./.gemini/`) or global (`~/.gemini/`) workspaces.
 - **Extensible:** Configurable via YAML to support custom folder structures.
 
-![AGC CLI Screenshot](doc/agc-screenshot.png)
+Example of `agc skills list` (also shows GC Policies!):
+
+![AGC CLI Screenshot](assets/screenshot.png)
 
 ## Installation
 
@@ -76,7 +76,7 @@ For more detailed usage, please refer to the [User Manual](USER_MANUAL.md).
 ## Project Identity
 
 <p align="center">
-  <img src="ag_gc_logo.png" alt="AG/GC Logo" width="50%">
+  <img src="assets/ag_gc_logo.png" alt="AG/GC Logo" width="50%">
 </p>
 
 **Name:** AG⚡GC (contracted to `AGC`)

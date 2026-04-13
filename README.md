@@ -1,15 +1,16 @@
 # agc: AntiGravity/GeminiCLI tool
 
-`agc` is a unified CLI tool designed to converge **Antigravity** and **Gemini CLI** workflows. It provides a single interface to discover, install, and manage skills, rules, workflows, custom commands, and policies across both ecosystems.
+`agc` is a unified CLI tool designed to **list and manage AntiGravity (`agy`) and Gemini CLI (`gc`) entities**, including skills (first and foremost), policies, custom commands, rules, and workflows. 
+
+Essentially, it's a CLI tool that discovers all relevant assets across your known directories and makes it easy to install or symlink them from your base repositories into your global or local workspaces.
 
 **Codename:** 双子座のカノン?, Jemini no Kanon
 
 ## Key Features
 
 - **Rich CLI Output:** Visualizes entities with clear color-coding (e.g., distinguishing **symlinks**), and displays **skill size**, **version**, and **languages used**.
-- **Unified Management:** Manage entities for both Antigravity and Gemini CLI.
-- **Entity Discovery:** Easily list and search for skills, rules, and workflows.
-- **Smart Installation:** Automates symlink management for local and global installations.
+- **Entity Discovery:** Easily list and search for all `agy` and `gc` entities (skills, policies, commands, rules, workflows) across known directories.
+- **Smart Installation:** Automates symlink management, easily linking items from your base folders to local (`./.gemini/`) or global (`~/.gemini/`) workspaces.
 - **Extensible:** Configurable via YAML to support custom folder structures.
 
 ![AGC CLI Screenshot](doc/agc-screenshot.png)
@@ -45,7 +46,7 @@ List all available skills:
 ```bash
 agc skills list
 agc skills banana # Searches for skills with 'banana' in the name
-agc skills install nano-banana-ricc 
+agc skills install nano-banana-ricc --global # Installs a skill globally once I found the exact name.
 ```
 
 Install a skill globally:

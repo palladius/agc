@@ -1,5 +1,5 @@
 # Kanon di Gemini (AGC) Configuration File
-# 
+#
 # Copy this file to ~/.agc.yaml to override the default hardcoded workspaces
 # and configure surfaces explicitly!
 
@@ -17,11 +17,6 @@ folders:
   - path: "~/git/gemini-cli-custom-commands"
     comment: "Standard custom command skills"
     visibility: ["gc", "agy"]
-    context: "global"
-
-  - path: "~/.openclaw/workspace"
-    comment: "OpenClaw workspace"
-    visibility: ["oc"]
     context: "global"
 
   - path: "~/git/gemini-cli-g3"

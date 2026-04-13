@@ -1,4 +1,4 @@
----\nname: agc\ndescription: Antigravity Converged\n---
+---\nname: agc\ndescription: AntiGravity/GeminiCLI tool\n---
 
 I've created `skills` and it amazing.
 This morning I've created §agy` and its also amazing.

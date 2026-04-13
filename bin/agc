@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
 =begin
-✨ Antigravity Converged (AGC) ✨
+✨ AntiGravity/GeminiCLI tool (AGC) ✨
 A unified CLI tool for managing skills, rules, workflows, and policies 
 across Antigravity and Gemini CLI.
 =end
@@ -135,7 +135,7 @@ class AGC
   end
 
   def run
-    puts "#{E_SPARKLE} Antigravity Converged (AGC) #{E_SPARKLE} [Entity: #{@entity || 'NONE'}]\n\n"
+    puts "#{E_SPARKLE} AntiGravity/GeminiCLI tool (AGC) #{E_SPARKLE} [Entity: #{@entity || 'NONE'}]\n\n"
     
     if @entity.nil?
       show_help

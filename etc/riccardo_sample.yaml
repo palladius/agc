@@ -19,6 +19,16 @@ folders:
     visibility: ["gc", "agy"]
     context: "global"
 
+  - path: "~/.openclaw/workspace"
+    comment: "OpenClaw workspace"
+    visibility: ["oc"]
+    context: "global"
+
+  - path: "~/git/openclaw/skills"
+    comment: "OpenClaw skills"
+    visibility: ["oc"]
+    context: "global"
+
   - path: "~/git/gemini-cli-g3"
     comment: "Google3 skills"
     visibility: []

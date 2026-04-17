@@ -2,7 +2,7 @@
 #
 # Copy this file to ~/.agc.yaml to override the default hardcoded workspaces
 # and configure surfaces explicitly!
-
+# Repo: github.com/palladius/agc
 folders:
   - path: "~/git/gemini-cli-palladius-private-goodies"
     comment: "Private research and tools"
@@ -17,19 +17,4 @@ folders:
   - path: "~/git/gemini-cli-custom-commands"
     comment: "Standard custom command skills"
     visibility: ["gc", "agy"]
-    context: "global"
-
-  - path: "~/.openclaw/workspace"
-    comment: "OpenClaw workspace"
-    visibility: ["oc"]
-    context: "global"
-
-  - path: "~/git/openclaw/skills"
-    comment: "OpenClaw skills"
-    visibility: ["oc"]
-    context: "global"
-
-  - path: "~/git/gemini-cli-g3"
-    comment: "Google3 skills"
-    visibility: []
     context: "global"

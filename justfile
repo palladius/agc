@@ -15,6 +15,9 @@ skills-equivalent:
 agy-equivalent:
 	bin/agc all list --for agy -a
 
+show-custom-commands:
+	agc custom_commands list
+
 antigravity-me:
 	echo NO THIS JUST ADDS FOLDERS NOT READ ... antigravity . --add $GIC --add ~/git/skillume/
 	antigravity .

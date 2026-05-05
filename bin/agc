@@ -324,7 +324,7 @@ class AGC
       folder_elements.each do |element|
         prefix = "#{element[:sub_folder]}/".rjust(10)
         if element[:type] == :skill
-           process_single_skill(element[:path], prefix)
+           process_single_skill(element[:path], prefix, element[:sub_folder])
         else
            process_single_markdown(element[:path], element[:emoji], prefix)
         end
@@ -509,13 +509,13 @@ class AGC
       puts header
 
       skills.each do |skill|
-        process_single_skill(skill)
+        process_single_skill(skill, nil, sub_folder)
       end
       puts ""
     end
   end
 
-  def process_single_skill(skill, prefix = nil)
+  def process_single_skill(skill, prefix = nil, sub_folder = nil)
     skill_name = skill.basename.to_s
     is_link = skill.symlink?
     
@@ -524,6 +524,7 @@ class AGC
     line_count = 0
     shrug = false
     content = ""
+    toml_info = nil
     
     if skill_md.exist?
       content = skill_md.read
@@ -532,7 +533,25 @@ class AGC
         version = $1.strip
       end
     else
-      shrug = true
+      # Check for .toml files in sub_folder context or directly
+      begin
+        target = is_link ? skill.realpath : skill
+        if target.directory?
+          toml_files = target.children.select { |f| f.extname == '.toml' }
+          if !toml_files.empty?
+            shrug = false
+            toml_infoCount = toml_files.size
+            toml_info = toml_infoCount == 1 ? toml_files.first.basename.to_s : "#{toml_infoCount} toml"
+            line_count = toml_files.map { |f| File.read(f).lines.count rescue 0 }.sum
+          else
+            shrug = true
+          end
+        else
+          shrug = true
+        end
+      rescue
+        shrug = true
+      end
     end
 
     color = shrug ? C_COMMENT : (is_link ? C_SYMLINK : C_SKILL)
@@ -560,6 +579,7 @@ class AGC
     metadata = ""
     metadata += " #{C_SIZE}#{line_count}L#{C_RESET}" if line_count > 0
     metadata += " #{C_VERSION}v#{version}#{C_RESET}" if version
+    metadata += " #{C_COMMENT}(#{toml_info})#{C_RESET}" if toml_info
     metadata += " #{E_SHRUG}" if shrug
     metadata += " #{lang_emojis}" if lang_emojis != ""
 

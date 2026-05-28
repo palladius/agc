@@ -69,21 +69,27 @@ end
 
 def build_folders
   git_root = get_git_root
-  local_path = git_root.empty? ? Dir.pwd : git_root
+  
+  local_paths = [Dir.pwd]
+  local_paths << git_root unless git_root.empty?
+  local_paths = local_paths.uniq.map { |p| File.expand_path(p) }
 
   official_folders = [
     { path: '~/.gemini/antigravity', comment: 'Global Antigravity settings', visibility: [:agy], context: :global },
     { path: '~/.gemini', comment: 'Gemini policies', visibility: [:gc], context: :global },
     { path: '~/.gemini/skills', comment: 'User-specific skills', visibility: [:gc, :agy], context: :global },
     { path: '~/.gemini/config', comment: 'Global Gemini Config', visibility: [:gc, :agy], context: :global },
-    { path: '~/.agents', comment: 'Legacy Antigravity/GC System', visibility: [:gc, :agy], context: :global },
-    { path: "#{local_path}/.gemini", comment: 'Local repo .gemini config', visibility: [:gc, :agy], context: :local },
-    { path: "#{local_path}/.agents", comment: 'Local repo .agents config', visibility: [:gc, :agy], context: :local },
-    { path: "#{local_path}/_gemini", comment: 'Local repo _gemini config', visibility: [:gc, :agy], context: :local },
-    { path: "#{local_path}/_agents", comment: 'Local repo _agents config', visibility: [:gc, :agy], context: :local },
-    { path: "#{local_path}/gemini", comment: 'Local repo gemini config', visibility: [:gc, :agy], context: :local },
-    { path: "#{local_path}/agents", comment: 'Local repo agents config', visibility: [:gc, :agy], context: :local }
+    { path: '~/.agents', comment: 'Legacy Antigravity/GC System', visibility: [:gc, :agy], context: :global }
   ]
+
+  local_paths.each do |lp|
+    official_folders << { path: "#{lp}/.gemini", comment: 'Local repo .gemini config', visibility: [:gc, :agy], context: :local }
+    official_folders << { path: "#{lp}/.agents", comment: 'Local repo .agents config', visibility: [:gc, :agy], context: :local }
+    official_folders << { path: "#{lp}/_gemini", comment: 'Local repo _gemini config', visibility: [:gc, :agy], context: :local }
+    official_folders << { path: "#{lp}/_agents", comment: 'Local repo _agents config', visibility: [:gc, :agy], context: :local }
+    official_folders << { path: "#{lp}/gemini", comment: 'Local repo gemini config', visibility: [:gc, :agy], context: :local }
+    official_folders << { path: "#{lp}/agents", comment: 'Local repo agents config', visibility: [:gc, :agy], context: :local }
+  end
 
   yaml_data = load_yaml_config
   custom_folders = []
@@ -93,19 +99,20 @@ def build_folders
     custom_folders = yaml_data['folders'].map do |cfg|
       path = cfg['path']
       
-      # Substitute local dynamic paths natively
+      # Substitute local dynamic paths natively (default to first local_path for backwards compatibility)
+      main_local = local_paths.first
       if path == '.local_git_gemini'
-         path = "#{local_path}/.gemini"
+         path = "#{main_local}/.gemini"
       elsif path == '.local_git_agents'
-         path = "#{local_path}/.agents"
+         path = "#{main_local}/.agents"
       elsif path == '_local_git_gemini'
-         path = "#{local_path}/_gemini"
+         path = "#{main_local}/_gemini"
       elsif path == '_local_git_agents'
-         path = "#{local_path}/_agents"
+         path = "#{main_local}/_agents"
       elsif path == 'local_git_gemini'
-         path = "#{local_path}/gemini"
+         path = "#{main_local}/gemini"
       elsif path == 'local_git_agents'
-         path = "#{local_path}/agents"
+         path = "#{main_local}/agents"
       end
 
       { 

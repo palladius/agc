@@ -47,23 +47,23 @@ class TestAGC < Minitest::Test
 
   def test_build_folders_includes_underscore_folders
     folders = build_folders
-    underscore_gemini = folders.find { |f| f[:comment] == 'Local repo _gemini config' }
-    refute_nil underscore_gemini, "Expected to find 'Local repo _gemini config'"
+    underscore_gemini = folders.find { |f| f[:comment] == 'Local folder _gemini config' }
+    refute_nil underscore_gemini, "Expected to find 'Local folder _gemini config'"
     assert_equal :local, underscore_gemini[:context]
 
-    underscore_agents = folders.find { |f| f[:comment] == 'Local repo _agents config' }
-    refute_nil underscore_agents, "Expected to find 'Local repo _agents config'"
+    underscore_agents = folders.find { |f| f[:comment] == 'Local folder _agents config' }
+    refute_nil underscore_agents, "Expected to find 'Local folder _agents config'"
     assert_equal :local, underscore_agents[:context]
   end
 
   def test_build_folders_includes_regular_unprefixed_folders
     folders = build_folders
-    gemini = folders.find { |f| f[:comment] == 'Local repo gemini config' }
-    refute_nil gemini, "Expected to find 'Local repo gemini config'"
+    gemini = folders.find { |f| f[:comment] == 'Local folder gemini config' }
+    refute_nil gemini, "Expected to find 'Local folder gemini config'"
     assert_equal :local, gemini[:context]
 
-    agents = folders.find { |f| f[:comment] == 'Local repo agents config' }
-    refute_nil agents, "Expected to find 'Local repo agents config'"
+    agents = folders.find { |f| f[:comment] == 'Local folder agents config' }
+    refute_nil agents, "Expected to find 'Local folder agents config'"
     assert_equal :local, agents[:context]
   end
 end

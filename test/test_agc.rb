@@ -44,4 +44,15 @@ class TestAGC < Minitest::Test
     assert_includes config_folder[:visibility], :gc
     assert_includes config_folder[:visibility], :agy
   end
+
+  def test_build_folders_includes_underscore_folders
+    folders = build_folders
+    underscore_gemini = folders.find { |f| f[:comment] == 'Local repo _gemini config' }
+    refute_nil underscore_gemini, "Expected to find 'Local repo _gemini config'"
+    assert_equal :local, underscore_gemini[:context]
+
+    underscore_agents = folders.find { |f| f[:comment] == 'Local repo _agents config' }
+    refute_nil underscore_agents, "Expected to find 'Local repo _agents config'"
+    assert_equal :local, underscore_agents[:context]
+  end
 end

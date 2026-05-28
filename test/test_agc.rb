@@ -55,4 +55,15 @@ class TestAGC < Minitest::Test
     refute_nil underscore_agents, "Expected to find 'Local repo _agents config'"
     assert_equal :local, underscore_agents[:context]
   end
+
+  def test_build_folders_includes_regular_unprefixed_folders
+    folders = build_folders
+    gemini = folders.find { |f| f[:comment] == 'Local repo gemini config' }
+    refute_nil gemini, "Expected to find 'Local repo gemini config'"
+    assert_equal :local, gemini[:context]
+
+    agents = folders.find { |f| f[:comment] == 'Local repo agents config' }
+    refute_nil agents, "Expected to find 'Local repo agents config'"
+    assert_equal :local, agents[:context]
+  end
 end

@@ -80,7 +80,9 @@ def build_folders
     { path: "#{local_path}/.gemini", comment: 'Local repo .gemini config', visibility: [:gc, :agy], context: :local },
     { path: "#{local_path}/.agents", comment: 'Local repo .agents config', visibility: [:gc, :agy], context: :local },
     { path: "#{local_path}/_gemini", comment: 'Local repo _gemini config', visibility: [:gc, :agy], context: :local },
-    { path: "#{local_path}/_agents", comment: 'Local repo _agents config', visibility: [:gc, :agy], context: :local }
+    { path: "#{local_path}/_agents", comment: 'Local repo _agents config', visibility: [:gc, :agy], context: :local },
+    { path: "#{local_path}/gemini", comment: 'Local repo gemini config', visibility: [:gc, :agy], context: :local },
+    { path: "#{local_path}/agents", comment: 'Local repo agents config', visibility: [:gc, :agy], context: :local }
   ]
 
   yaml_data = load_yaml_config
@@ -100,6 +102,10 @@ def build_folders
          path = "#{local_path}/_gemini"
       elsif path == '_local_git_agents'
          path = "#{local_path}/_agents"
+      elsif path == 'local_git_gemini'
+         path = "#{local_path}/gemini"
+      elsif path == 'local_git_agents'
+         path = "#{local_path}/agents"
       end
 
       { 

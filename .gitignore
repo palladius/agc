@@ -1,2 +1,6 @@
 .agents/
 .gemini/
+_agents/
+_gemini/
+agents/
+gemini/

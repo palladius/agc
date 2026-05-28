@@ -847,7 +847,7 @@ class AGC
     
     # 1. Collect global config files
     global_files = [
-      { path: '~/.gemini/settings.json', label: 'Gemini CLI Settings', visibility: [:gc, :agy] },
+      { path: '~/.gemini/settings.json', label: 'Gemini CLI Settings', visibility: [:gc] },
       { path: '~/.gemini/antigravity/mcp_config.json', label: 'Antigravity agy Settings', visibility: [:agy] },
       { path: '~/.gemini/config/mcp_config.json', label: 'Shared Gemini Config', visibility: [:gc, :agy] }
     ]
@@ -862,9 +862,87 @@ class AGC
     local_paths.each do |lp|
       # Check for dot, underscore, and unprefixed config folders
       %w[.gemini _gemini gemini].each do |prefix|
-        local_files << { path: "#{lp}/#{prefix}/settings.json", label: "Local #{prefix}/settings.json", visibility: [:gc, :agy] }
+        local_files << { path: "#{lp}/#{prefix}/settings.json", label: "Local #{prefix}/settings.json", visibility: [:gc] }
         local_files << { path: "#{lp}/#{prefix}/antigravity/mcp_config.json", label: "Local #{prefix}/antigravity/mcp_config.json", visibility: [:agy] }
         local_files << { path: "#{lp}/#{prefix}/config/mcp_config.json", label: "Local #{prefix}/config/mcp_config.json", visibility: [:gc, :agy] }
+      end
+    end
+
+    # 3. Collect plugin-specific config files
+    seen_plugins = Set.new
+    build_folders.each do |config|
+      %w[plugins].each do |sub_folder|
+        target_path = File.expand_path(File.join(config[:path], sub_folder))
+        next unless File.directory?(target_path)
+        
+        begin
+          Pathname.new(target_path).children.select { |c| c.directory? || c.symlink? }.each do |plugin_dir|
+            begin
+              real_plugin_path = plugin_dir.realpath.to_s
+              next if seen_plugins.include?(real_plugin_path)
+              seen_plugins.add(real_plugin_path)
+              
+              plugin_name = plugin_dir.basename.to_s
+              context = config[:context]
+              
+              # Scan various config sub-paths in this plugin
+              %w[.gemini _gemini gemini].each do |prefix|
+                cfg_entry = { 
+                  path: File.join(real_plugin_path, prefix, "settings.json"), 
+                  label: "Plugin #{plugin_name} settings.json", 
+                  visibility: [:gc],
+                  context: context
+                }
+                if context == :global
+                  global_files << cfg_entry
+                else
+                  local_files << cfg_entry
+                end
+
+                cfg_entry_agy = { 
+                  path: File.join(real_plugin_path, prefix, "antigravity", "mcp_config.json"), 
+                  label: "Plugin #{plugin_name} Antigravity mcp_config.json", 
+                  visibility: [:agy],
+                  context: context
+                }
+                if context == :global
+                  global_files << cfg_entry_agy
+                else
+                  local_files << cfg_entry_agy
+                end
+
+                cfg_entry_shared = { 
+                  path: File.join(real_plugin_path, prefix, "config", "mcp_config.json"), 
+                  label: "Plugin #{plugin_name} Shared mcp_config.json", 
+                  visibility: [:gc, :agy],
+                  context: context
+                }
+                if context == :global
+                  global_files << cfg_entry_shared
+                else
+                  local_files << cfg_entry_shared
+                end
+              end
+              
+              # Check direct root mcp_config.json in plugin
+              cfg_entry_root = {
+                path: File.join(real_plugin_path, "mcp_config.json"),
+                label: "Plugin #{plugin_name} mcp_config.json",
+                visibility: [:gc, :agy],
+                context: context
+              }
+              if context == :global
+                global_files << cfg_entry_root
+              else
+                local_files << cfg_entry_root
+              end
+            rescue
+              # skip plugin folder errors
+            end
+          end
+        rescue
+          # skip sub_folder errors
+        end
       end
     end
 

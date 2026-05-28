@@ -66,4 +66,11 @@ class TestAGC < Minitest::Test
     refute_nil agents, "Expected to find 'Local folder agents config'"
     assert_equal :local, agents[:context]
   end
+
+  def test_parse_args_for_mcp
+    agc = AGC.new(['mcp', 'list', '--for', 'agy'])
+    opts = agc.instance_variable_get(:@options)
+    assert_equal :agy, opts[:for]
+    assert_equal 'mcp', agc.instance_variable_get(:@entity)
+  end
 end

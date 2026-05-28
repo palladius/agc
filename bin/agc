@@ -42,6 +42,7 @@ E_RUBY      = "💎"
 E_SHRUG     = "🤷"
 E_DICE      = "🎲"
 E_PLUGIN    = "🔌"
+E_MCP       = "⚙️"
 
 # --- FOLDERS CONFIGURATION ---
 def get_git_root
@@ -219,6 +220,8 @@ class AGC
       else
         process_plugins('plugins')
       end
+    when 'mcp', 'mcps', 'mcp_servers', 'mcp_server'
+      process_mcp
     when 'all'
       process_all
     else
@@ -240,6 +243,7 @@ class AGC
     puts "  custom_commands  Manage GC CustomCommands"
     puts "  policies         Manage GC Policy Engine"
     puts "  plugins          Manage Antigravity/Gemini CLI plugins"
+    puts "  mcp              Manage configured MCP servers"
     puts "\nActions:"
     puts "  list             (Default) List entities"
     puts "  search <term>    Search entities for a specific term"
@@ -836,6 +840,144 @@ class AGC
     highlighted = @search_term ? plugin_name.gsub(/(#{Regexp.escape(@search_term)})/i, "#{C_MATCH}\\1#{color}") : plugin_name
     display_name = prefix ? "#{C_RESET}#{prefix}#{color}#{highlighted}" : highlighted
     puts "  #{emoji} #{color}#{display_name}#{C_RESET}#{metadata}"
+  end
+
+  def process_mcp
+    require 'json'
+    
+    # 1. Collect global config files
+    global_files = [
+      { path: '~/.gemini/settings.json', label: 'Gemini CLI Settings', visibility: [:gc, :agy] },
+      { path: '~/.gemini/antigravity/mcp_config.json', label: 'Antigravity agy Settings', visibility: [:agy] },
+      { path: '~/.gemini/config/mcp_config.json', label: 'Shared Gemini Config', visibility: [:gc, :agy] }
+    ]
+
+    # 2. Collect local workspace config folders
+    git_root = get_git_root
+    local_paths = [Dir.pwd]
+    local_paths << git_root unless git_root.empty?
+    local_paths = local_paths.uniq.map { |p| File.expand_path(p) }
+
+    local_files = []
+    local_paths.each do |lp|
+      # Check for dot, underscore, and unprefixed config folders
+      %w[.gemini _gemini gemini].each do |prefix|
+        local_files << { path: "#{lp}/#{prefix}/settings.json", label: "Local #{prefix}/settings.json", visibility: [:gc, :agy] }
+        local_files << { path: "#{lp}/#{prefix}/antigravity/mcp_config.json", label: "Local #{prefix}/antigravity/mcp_config.json", visibility: [:agy] }
+        local_files << { path: "#{lp}/#{prefix}/config/mcp_config.json", label: "Local #{prefix}/config/mcp_config.json", visibility: [:gc, :agy] }
+      end
+    end
+
+    all_configs = []
+    
+    # Filter by context if specified
+    unless @options[:context] == :local
+      global_files.each do |f|
+        expanded = File.expand_path(f[:path])
+        all_configs << { path: expanded, label: f[:label], context: :global, visibility: f[:visibility] }
+      end
+    end
+
+    unless @options[:context] == :global
+      local_files.each do |f|
+        expanded = File.expand_path(f[:path])
+        all_configs << { path: expanded, label: f[:label], context: :local, visibility: f[:visibility] }
+      end
+    end
+
+    # Group and deduplicate by real resolved path
+    seen_paths = Set.new
+    valid_configs = []
+
+    all_configs.each do |cfg|
+      path = cfg[:path]
+      next unless File.exist?(path)
+      
+      # Filter by system if --for is specified
+      next if @options[:for] && !cfg[:visibility].include?(@options[:for])
+      
+      begin
+        real_p = File.realpath(path)
+        unless seen_paths.include?(real_p)
+          seen_paths.add(real_p)
+          valid_configs << cfg
+        end
+      rescue
+        # if broken symlink, skip
+      end
+    end
+
+    if valid_configs.empty?
+      puts "No configured MCP servers found matching your criteria."
+      return
+    end
+
+    # Print matching MCP servers
+    valid_configs.each do |cfg|
+      servers = parse_mcp_file(cfg[:path])
+      
+      # Filter by search term if provided
+      if @search_term
+        servers = servers.select { |k, v| k.downcase.include?(@search_term.downcase) }
+      end
+
+      next if servers.empty?
+
+      short_path = cfg[:path].sub(ENV['HOME'], '~')
+      context_emoji = cfg[:context] == :global ? E_GLOBAL : E_LOCAL
+      puts "#{C_FOLDER}#{context_emoji} #{cfg[:label]} [#{short_path}]#{C_RESET}"
+
+      servers.each do |name, info|
+        # Print server name
+        highlighted = @search_term ? name.gsub(/(#{Regexp.escape(@search_term)})/i, "#{C_MATCH}\\1#{C_SKILL}") : name
+        print "  #{E_MCP} #{C_SKILL}#{highlighted}#{C_RESET}"
+
+        # Print command or url/httpUrl details
+        if info.key?('command')
+          print " #{C_COMMENT}[command]#{C_RESET} #{info['command']}"
+          if info['args'] && !info['args'].empty?
+            print " #{info['args'].join(' ')}"
+          end
+        elsif info.key?('httpUrl')
+          print " #{C_COMMENT}[httpUrl]#{C_RESET} #{info['httpUrl']}"
+        elsif info.key?('url')
+          print " #{C_COMMENT}[url]#{C_RESET} #{info['url']}"
+        end
+        puts ""
+
+        # Print environment variables if verbose mode and present
+        if @options[:verbose]
+          if info['env'] && !info['env'].empty?
+            info['env'].each do |k, v|
+              puts "    #{C_COMMENT}env: #{k}=#{v}#{C_RESET}"
+            end
+          end
+          if info['headers'] && !info['headers'].empty?
+            info['headers'].each do |k, v|
+              puts "    #{C_COMMENT}header: #{k}=#{v}#{C_RESET}"
+            end
+          end
+        end
+      end
+      puts ""
+    end
+  end
+
+  def parse_mcp_file(path)
+    return {} unless File.exist?(path)
+    begin
+      data = JSON.parse(File.read(path))
+      if data.is_a?(Hash)
+        servers = data['mcpServers'] || data
+        if servers.is_a?(Hash)
+          # Filter out top-level settings/metadata keys (only retain Hash objects with command, url, or httpUrl keys)
+          return servers.select { |k, v| v.is_a?(Hash) && (v.key?('command') || v.key?('url') || v.key?('httpUrl')) }
+        end
+      end
+    rescue
+      # ignore JSON parse errors
+    end
+    {}
   end
 end
 

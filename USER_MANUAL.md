@@ -11,6 +11,7 @@ You can use `agc` to manage the following entities:
 * `custom_commands` - Manage GC CustomCommands
 * `policies` - Manage GC Policy Engine
 * `plugins` - Manage Antigravity/Gemini CLI plugins
+* `mcp` - Manage configured Model Context Protocol (MCP) servers
 
 ### Lists and Searches
 To list entities: `$ agc skills list` or `$ agc skills`
@@ -21,6 +22,13 @@ For plugins:
 - Search: `$ agc plugins search <term>`
 
 Plugins are represented by the `🔌` emoji and show their version, a count of internal assets (skills, rules, workflows, commands, policies), and their description from `plugin.json`.
+
+For MCP servers:
+- List all: `$ agc mcp list` or `$ agc mcp`
+- Filter by system: `$ agc mcp list --for agy` or `$ agc mcp list --for gc`
+- Search servers: `$ agc mcp search <term>`
+
+MCP servers are represented by the `⚙️` emoji and display their type (`[command]`, `[url]`, or `[httpUrl]`) and their execution configuration.
 
 ## Installing Entities (Skills, Rules, Workflows, Policies, Plugins, etc)
 

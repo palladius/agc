@@ -28,4 +28,20 @@ class TestAGC < Minitest::Test
     assert_equal :global, global_ag[:context]
     assert_includes global_ag[:visibility], :agy
   end
+
+  def test_parse_args_for_plugins
+    agc = AGC.new(['plugins', 'list', '--for', 'gc'])
+    opts = agc.instance_variable_get(:@options)
+    assert_equal :gc, opts[:for]
+    assert_equal 'plugins', agc.instance_variable_get(:@entity)
+  end
+
+  def test_build_folders_includes_config_folder
+    folders = build_folders
+    config_folder = folders.find { |f| f[:comment] == 'Global Gemini Config' }
+    refute_nil config_folder, "Expected to find 'Global Gemini Config' in folders"
+    assert_equal :global, config_folder[:context]
+    assert_includes config_folder[:visibility], :gc
+    assert_includes config_folder[:visibility], :agy
+  end
 end

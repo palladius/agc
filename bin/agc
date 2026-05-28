@@ -41,6 +41,7 @@ E_PYTHON    = "🐍"
 E_RUBY      = "💎"
 E_SHRUG     = "🤷"
 E_DICE      = "🎲"
+E_PLUGIN    = "🔌"
 
 # --- FOLDERS CONFIGURATION ---
 def get_git_root
@@ -74,6 +75,7 @@ def build_folders
     { path: '~/.gemini/antigravity', comment: 'Global Antigravity settings', visibility: [:agy], context: :global },
     { path: '~/.gemini', comment: 'Gemini policies', visibility: [:gc], context: :global },
     { path: '~/.gemini/skills', comment: 'User-specific skills', visibility: [:gc, :agy], context: :global },
+    { path: '~/.gemini/config', comment: 'Global Gemini Config', visibility: [:gc, :agy], context: :global },
     { path: '~/.agents', comment: 'Legacy Antigravity/GC System', visibility: [:gc, :agy], context: :global },
     { path: "#{local_path}/.gemini", comment: 'Local repo .gemini config', visibility: [:gc, :agy], context: :local },
     { path: "#{local_path}/.agents", comment: 'Local repo .agents config', visibility: [:gc, :agy], context: :local }
@@ -179,6 +181,12 @@ class AGC
       else
         process_file_entity('policies', '👮', '.toml')
       end
+    when 'plugins', 'plugin'
+      if @action == 'install'
+        install_item(@search_term, @install_target, 'plugins')
+      else
+        process_plugins('plugins')
+      end
     when 'all'
       process_all
     else
@@ -199,6 +207,7 @@ class AGC
     puts "  workflows        Manage Agy Workflows"
     puts "  custom_commands  Manage GC CustomCommands"
     puts "  policies         Manage GC Policy Engine"
+    puts "  plugins          Manage Antigravity/Gemini CLI plugins"
     puts "\nActions:"
     puts "  list             (Default) List entities"
     puts "  search <term>    Search entities for a specific term"
@@ -269,9 +278,9 @@ class AGC
 
   def process_all
     systems_to_check = case @options[:for]
-      when :gc then %w[commands skills policies]
-      when :agy then %w[rules skills workflows]
-      else %w[skills rules workflows commands policies]
+      when :gc then %w[plugins commands skills policies]
+      when :agy then %w[plugins rules skills workflows]
+      else %w[plugins skills rules workflows commands policies]
       end
 
     hostname = Socket.gethostname
@@ -301,6 +310,10 @@ class AGC
           items = items.select { |s| s.basename.to_s.downcase.include?(@search_term.downcase) } if @search_term
           items = items.reject { |s| s.basename.to_s.start_with?('openclaudio-') } if is_work_machine && !@options[:all]
           items.each { |s| folder_elements << { type: :skill, path: s, sub_folder: sub_folder } }
+        elsif sub_folder == 'plugins'
+          items = dir.children.select { |c| c.directory? || c.symlink? }.sort_by(&:basename)
+          items = items.select { |s| s.basename.to_s.downcase.include?(@search_term.downcase) } if @search_term
+          items.each { |s| folder_elements << { type: :plugin, path: s, sub_folder: sub_folder } }
         else
           ext = sub_folder == 'policies' ? '.toml' : '.md'
           emoji = case sub_folder
@@ -325,6 +338,8 @@ class AGC
         prefix = "#{element[:sub_folder]}/".rjust(10)
         if element[:type] == :skill
            process_single_skill(element[:path], prefix, element[:sub_folder])
+        elsif element[:type] == :plugin
+           process_single_plugin(element[:path], prefix)
         else
            process_single_markdown(element[:path], element[:emoji], prefix)
         end
@@ -349,7 +364,7 @@ class AGC
     
     build_folders.each do |config|
       search_path = File.expand_path(File.join(config[:path], entity_type))
-      search_path = File.expand_path(config[:path]) if config[:path].end_with?('.agents') && ['skills', 'commands'].include?(entity_type)
+      search_path = File.expand_path(config[:path]) if config[:path].end_with?('.agents') && ['skills', 'commands', 'plugins'].include?(entity_type)
       search_path = File.expand_path(File.join(config[:path], entity_type)) unless search_path.end_with?(entity_type)
       
       next if seen_paths.include?(search_path)
@@ -360,7 +375,7 @@ class AGC
 
       dir.children.each do |c|
         is_match = false
-        if ['skills', 'commands'].include?(entity_type)
+        if ['skills', 'commands', 'plugins'].include?(entity_type)
           is_match = (c.directory? || c.symlink?) && c.basename.to_s == item_name
         else
           is_match = (c.file? || c.symlink?) && c.basename.to_s == item_name
@@ -434,7 +449,11 @@ class AGC
 
     target_systems.each do |sys|
       if sys == :gc
-        destinations << File.join(base_dir, ".gemini/#{entity_type}", item_name)
+        if entity_type == 'plugins'
+          destinations << File.join(base_dir, ".gemini/config/plugins", item_name)
+        else
+          destinations << File.join(base_dir, ".gemini/#{entity_type}", item_name)
+        end
       elsif sys == :agy
         destinations << File.join(base_dir, ".agents/#{entity_type}", item_name)
       end
@@ -689,6 +708,102 @@ class AGC
     puts "  #{type_emoji}#{is_link ? E_SYMLINK : ' '} #{display_name}#{C_RESET}#{metadata}#{target_str}"
     
     broken
+  end
+
+  def process_plugins(sub_folder)
+    seen_paths = []
+
+    build_folders.each do |config|
+      next if @options[:for] && !config[:visibility].include?(@options[:for])
+      next if @options[:context] && config[:context] != @options[:context]
+      
+      target_path = File.expand_path(File.join(config[:path], sub_folder))
+      next if seen_paths.include?(target_path)
+      seen_paths << target_path
+
+      folder = Pathname.new(target_path)
+      next unless folder.directory?
+
+      plugins = folder.children.select { |c| c.directory? || c.symlink? }.sort_by(&:basename)
+      plugins = plugins.select { |p| p.basename.to_s.downcase.include?(@search_term.downcase) } if @search_term
+
+      next if plugins.empty?
+
+      header = "#{C_FOLDER}#{config[:context] == :global ? E_GLOBAL : E_LOCAL} #{config[:path]}/#{sub_folder}#{C_RESET}"
+      if config[:comment]
+        comment_text = config[:comment]
+        if config[:context] == :local
+          pwd = Dir.pwd.gsub(ENV['HOME'], '~')
+          comment_text += " #{C_WHITE}on#{C_RESET} #{C_SYMLINK}#{pwd}#{C_COMMENT}"
+        end
+        header += " #{C_COMMENT}# #{comment_text}#{C_RESET}"
+      end
+      puts header
+
+      plugins.each do |plugin|
+        process_single_plugin(plugin, nil)
+      end
+      puts ""
+    end
+  end
+
+  def process_single_plugin(plugin, prefix = nil)
+    require 'json'
+    plugin_name = plugin.basename.to_s
+    is_link = plugin.symlink?
+    color = is_link ? C_SYMLINK : C_SKILL
+    emoji = E_PLUGIN
+
+    version = nil
+    description = nil
+
+    plugin_json_path = plugin.join("plugin.json")
+    if plugin_json_path.exist?
+      begin
+        data = JSON.parse(plugin_json_path.read)
+        version = data['version']
+        description = data['description']
+      rescue
+      end
+    end
+
+    installed_version_path = plugin.join("installed_version.json")
+    if version.nil? && installed_version_path.exist?
+      begin
+        data = JSON.parse(installed_version_path.read)
+        version = data['version']
+      rescue
+      end
+    end
+
+    counts = []
+    begin
+      target = is_link ? plugin.realpath : plugin
+      if target.directory?
+        %w[skills rules workflows commands policies].each do |sub|
+          sub_path = target.join(sub)
+          next unless sub_path.directory?
+          
+          item_count = if %w[skills commands].include?(sub)
+            sub_path.children.select { |c| c.directory? || c.symlink? }.count
+          else
+            ext = sub == 'policies' ? '.toml' : '.md'
+            sub_path.children.select { |c| (c.file? || c.symlink?) && c.extname == ext }.count
+          end
+          counts << "#{item_count} #{sub}" if item_count > 0
+        end
+      end
+    rescue
+    end
+
+    metadata = ""
+    metadata += " #{C_VERSION}v#{version}#{C_RESET}" if version
+    metadata += " #{C_COMMENT}(#{counts.join(', ')})#{C_RESET}" unless counts.empty?
+    metadata += " - #{description}" if description && !description.empty?
+
+    highlighted = @search_term ? plugin_name.gsub(/(#{Regexp.escape(@search_term)})/i, "#{C_MATCH}\\1#{color}") : plugin_name
+    display_name = prefix ? "#{C_RESET}#{prefix}#{color}#{highlighted}" : highlighted
+    puts "  #{emoji} #{color}#{display_name}#{C_RESET}#{metadata}"
   end
 end
 

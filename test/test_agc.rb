@@ -73,4 +73,41 @@ class TestAGC < Minitest::Test
     assert_equal :agy, opts[:for]
     assert_equal 'mcp', agc.instance_variable_get(:@entity)
   end
+
+  def test_parse_args_search_options
+    agc_search = AGC.new(['skills', '--search', 'agy'])
+    assert_equal 'skills', agc_search.instance_variable_get(:@entity)
+    assert_equal 'agy', agc_search.instance_variable_get(:@search_term)
+
+    agc_query = AGC.new(['skills', '--query', 'another'])
+    assert_equal 'skills', agc_query.instance_variable_get(:@entity)
+    assert_equal 'another', agc_query.instance_variable_get(:@search_term)
+
+    agc_q = AGC.new(['skills', '-q', 'verbatim'])
+    assert_equal 'skills', agc_q.instance_variable_get(:@entity)
+    assert_equal 'verbatim', agc_q.instance_variable_get(:@search_term)
+  end
+
+  def test_match_entity
+    agc = AGC.new(['skills'])
+    # match_entity? returns true if term matches basename
+    assert agc.send(:match_entity?, 'some-python-skill', 'skills', 'python')
+    assert agc.send(:match_entity?, 'some-python-skill', 'skills', 'PYTHON')
+    assert !agc.send(:match_entity?, 'some-python-skill', 'skills', 'ruby')
+    
+    # test with mock/nil values or check if description lookup works gracefully
+    assert agc.send(:match_entity?, 'nonexistent_path_xyz', 'skills', '')
+  end
+
+  def test_acceptance_search_skills_by_description
+    # Capture output of searching a keyword only present in a description (e.g., 'Duckie')
+    out, _err = capture_io do
+      begin
+        AGC.new(['skills', '--search', 'Duckie']).run
+      rescue SystemExit
+      end
+    end
+    assert_match(/ai-skills-for-agy/, out)
+    assert_match(/Duckie/, out)
+  end
 end

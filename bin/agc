@@ -251,6 +251,7 @@ class AGC
     puts "\nOptions:"
     puts "  -a, --all         Show all items (including broken links and hidden files)"
     puts "  -f, --fix-broken  Automatically remove broken symlinks (for rules/workflows)"
+    puts "  -q, --search, --query <term> Search entities for a specific term (verbatim in name and description)"
     puts "  --for <system>    Target system context (gc, agy)"
     puts "  --global          Show only globally configured items"
     puts "  --local           Show only locally configured (workspace) items"
@@ -282,6 +283,14 @@ class AGC
         @options[:context] = :global
       when '--local'
         @options[:context] = :local
+      when '--search', '--query', '-q'
+        val = @args[i+1]
+        if val
+          @options[:search_term] = val
+          skip_next = true
+        end
+      when /^--search=(.*)/, /^--query=(.*)/
+        @options[:search_term] = $1
       when '--for'
         val = @args[i+1]
         if val
@@ -304,7 +313,7 @@ class AGC
       idx += 1
     end
     
-    @search_term = remaining[idx]
+    @search_term = remaining[idx] || @options[:search_term]
     @install_target = remaining[idx + 1] if @action == 'install'
   end
 
@@ -342,13 +351,23 @@ class AGC
         dir = Pathname.new(target_path)
 
         if ['skills', 'commands'].include?(sub_folder)
-          items = dir.children.select { |c| c.directory? || c.symlink? }.sort_by(&:basename)
-          items = items.select { |s| s.basename.to_s.downcase.include?(@search_term.downcase) } if @search_term
+          items = dir.children.select { |c| c.directory? || c.symlink? }
+          if @search_term
+            items = items.select { |s| match_entity?(s, sub_folder, @search_term) }
+            items = items.sort_by { |s| -get_mtime(s).to_i }
+          else
+            items = items.sort_by(&:basename)
+          end
           items = items.reject { |s| s.basename.to_s.start_with?('openclaudio-') } if is_work_machine && !@options[:all]
           items.each { |s| folder_elements << { type: :skill, path: s, sub_folder: sub_folder } }
         elsif sub_folder == 'plugins'
-          items = dir.children.select { |c| c.directory? || c.symlink? }.sort_by(&:basename)
-          items = items.select { |s| s.basename.to_s.downcase.include?(@search_term.downcase) } if @search_term
+          items = dir.children.select { |c| c.directory? || c.symlink? }
+          if @search_term
+            items = items.select { |s| match_entity?(s, 'plugins', @search_term) }
+            items = items.sort_by { |s| -get_mtime(s).to_i }
+          else
+            items = items.sort_by(&:basename)
+          end
           items.each { |s| folder_elements << { type: :plugin, path: s, sub_folder: sub_folder } }
         else
           ext = sub_folder == 'policies' ? '.toml' : '.md'
@@ -357,8 +376,13 @@ class AGC
                   when 'workflows' then E_WORKFLOW
                   when 'policies' then '👮'
                   end
-          items = dir.children.select { |c| (c.file? || c.symlink?) && c.extname == ext }.sort_by(&:basename)
-          items = items.select { |c| c.basename.to_s.downcase.include?(@search_term.downcase) } if @search_term
+          items = dir.children.select { |c| (c.file? || c.symlink?) && c.extname == ext }
+          if @search_term
+            items = items.select { |c| match_entity?(c, sub_folder, @search_term) }
+            items = items.sort_by { |c| -get_mtime(c).to_i }
+          else
+            items = items.sort_by(&:basename)
+          end
           items.each { |item| folder_elements << { type: :file, path: item, sub_folder: sub_folder, emoji: emoji } }
         end
       end
@@ -545,8 +569,13 @@ class AGC
       folder = Pathname.new(expanded_path)
       next unless folder.directory?
 
-      skills = folder.children.select { |c| c.directory? || c.symlink? }.sort_by(&:basename)
-      skills = skills.select { |s| s.basename.to_s.downcase.include?(@search_term.downcase) } if @search_term
+      skills = folder.children.select { |c| c.directory? || c.symlink? }
+      if @search_term
+        skills = skills.select { |s| match_entity?(s, sub_folder, @search_term) }
+        skills = skills.sort_by { |s| -get_mtime(s).to_i }
+      else
+        skills = skills.sort_by(&:basename)
+      end
       skills = skills.reject { |s| s.basename.to_s.start_with?('openclaudio-') } if is_work_machine && !@options[:all]
 
       next if skills.empty?
@@ -580,11 +609,18 @@ class AGC
     shrug = false
     content = ""
     toml_info = nil
+    description = nil
     
     if skill_md.exist?
-      content = skill_md.read
+      content = skill_md.read rescue ""
       line_count = content.lines.count
-      if content =~ /^\s*version:\s*(.*)$/
+      yaml_block = content[/^---\s*\n(.*?)\n---(\s*\n|$)/m, 1]
+      if yaml_block
+        parsed = YAML.safe_load(yaml_block) rescue {}
+        version = parsed['version'] || parsed.dig('metadata', 'version')
+        description = parsed['description']
+      end
+      if version.nil? && content =~ /^\s*version:\s*(.*)$/
         version = $1.strip
       end
     else
@@ -598,6 +634,13 @@ class AGC
             toml_infoCount = toml_files.size
             toml_info = toml_infoCount == 1 ? toml_files.first.basename.to_s : "#{toml_infoCount} toml"
             line_count = toml_files.map { |f| File.read(f).lines.count rescue 0 }.sum
+            toml_files.each do |f|
+              c = File.read(f) rescue ""
+              if c =~ /description\s*=\s*['"](.*?)['"]/
+                description = $1
+                break
+              end
+            end
           else
             shrug = true
           end
@@ -637,6 +680,12 @@ class AGC
     metadata += " #{C_COMMENT}(#{toml_info})#{C_RESET}" if toml_info
     metadata += " #{E_SHRUG}" if shrug
     metadata += " #{lang_emojis}" if lang_emojis != ""
+    mtime = get_mtime(skill)
+    metadata += " #{C_COMMENT}#{mtime.strftime('%Y-%m-%d')}#{C_RESET}" if mtime && mtime > Time.at(0)
+    if description && !description.empty?
+      highlighted_desc = @search_term ? description.gsub(/(#{Regexp.escape(@search_term)})/i, "#{C_MATCH}\\1#{C_COMMENT}") : description
+      metadata += " - #{C_COMMENT}#{highlighted_desc}#{C_RESET}"
+    end
 
     highlighted = @search_term ? skill_name.gsub(/(#{Regexp.escape(@search_term)})/i, "#{C_MATCH}\\1#{color}") : skill_name
     display_name = prefix ? "#{C_RESET}#{prefix}#{color}#{highlighted}" : highlighted
@@ -658,8 +707,13 @@ class AGC
       dir = Pathname.new(expanded_path)
       next unless dir.directory?
 
-      items = dir.children.select { |c| (c.file? || c.symlink?) && c.extname == ext }.sort_by(&:basename)
-      items = items.select { |c| c.basename.to_s.downcase.include?(@search_term.downcase) } if @search_term
+      items = dir.children.select { |c| (c.file? || c.symlink?) && c.extname == ext }
+      if @search_term
+        items = items.select { |c| match_entity?(c, folder_name, @search_term) }
+        items = items.sort_by { |c| -get_mtime(c).to_i }
+      else
+        items = items.sort_by(&:basename)
+      end
 
       next if items.empty?
 
@@ -697,11 +751,12 @@ class AGC
     line_count = 0
     version = nil
     broken = false
+    description = nil
     
     begin
       target_file = is_link ? path.realpath : path
       if target_file.exist?
-        content = File.read(target_file)
+        content = File.read(target_file) rescue ""
         line_count = content.lines.count
         
         yaml_block = content[/^---\s*\n(.*?)\n---(\s*\n|$)/m, 1]
@@ -709,6 +764,7 @@ class AGC
           parsed = YAML.safe_load(yaml_block) rescue {}
           ver = parsed.dig('metadata', 'version') || parsed['version']
           version = ver.to_s if ver
+          description = parsed['description']
         end
       else
         broken = true
@@ -736,6 +792,12 @@ class AGC
     else
       metadata = line_count > 0 ? " #{C_SIZE}#{line_count}L#{C_RESET}" : ""
       metadata += " #{C_VERSION}v#{version}#{C_RESET}" if version
+      mtime = get_mtime(path)
+      metadata += " #{C_COMMENT}#{mtime.strftime('%Y-%m-%d')}#{C_RESET}" if mtime && mtime > Time.at(0)
+      if description && !description.empty?
+        highlighted_desc = @search_term ? description.gsub(/(#{Regexp.escape(@search_term)})/i, "#{C_MATCH}\\1#{C_COMMENT}") : description
+        metadata += " - #{C_COMMENT}#{highlighted_desc}#{C_RESET}"
+      end
     end
 
     highlighted = @search_term ? basename.gsub(/(#{Regexp.escape(@search_term)})/i, "#{C_MATCH}\\1#{color}") : basename
@@ -760,8 +822,13 @@ class AGC
       folder = Pathname.new(target_path)
       next unless folder.directory?
 
-      plugins = folder.children.select { |c| c.directory? || c.symlink? }.sort_by(&:basename)
-      plugins = plugins.select { |p| p.basename.to_s.downcase.include?(@search_term.downcase) } if @search_term
+      plugins = folder.children.select { |c| c.directory? || c.symlink? }
+      if @search_term
+        plugins = plugins.select { |p| match_entity?(p, 'plugins', @search_term) }
+        plugins = plugins.sort_by { |p| -get_mtime(p).to_i }
+      else
+        plugins = plugins.sort_by(&:basename)
+      end
 
       next if plugins.empty?
 
@@ -835,7 +902,12 @@ class AGC
     metadata = ""
     metadata += " #{C_VERSION}v#{version}#{C_RESET}" if version
     metadata += " #{C_COMMENT}(#{counts.join(', ')})#{C_RESET}" unless counts.empty?
-    metadata += " - #{description}" if description && !description.empty?
+    mtime = get_mtime(plugin)
+    metadata += " #{C_COMMENT}#{mtime.strftime('%Y-%m-%d')}#{C_RESET}" if mtime && mtime > Time.at(0)
+    if description && !description.empty?
+      highlighted_desc = @search_term ? description.gsub(/(#{Regexp.escape(@search_term)})/i, "#{C_MATCH}\\1#{C_COMMENT}") : description
+      metadata += " - #{C_COMMENT}#{highlighted_desc}#{C_RESET}"
+    end
 
     highlighted = @search_term ? plugin_name.gsub(/(#{Regexp.escape(@search_term)})/i, "#{C_MATCH}\\1#{color}") : plugin_name
     display_name = prefix ? "#{C_RESET}#{prefix}#{color}#{highlighted}" : highlighted
@@ -1056,6 +1128,84 @@ class AGC
       # ignore JSON parse errors
     end
     {}
+  end
+
+  def entity_description(path, entity_type)
+    path = Pathname.new(path)
+    case entity_type
+    when 'skills', 'commands', 'custom_commands'
+      skill_md = path.join("SKILL.md")
+      if skill_md.exist?
+        content = skill_md.read rescue ""
+        yaml_block = content[/^---\s*\n(.*?)\n---(\s*\n|$)/m, 1]
+        if yaml_block
+          parsed = YAML.safe_load(yaml_block) rescue {}
+          return parsed['description'].to_s if parsed['description']
+        end
+      else
+        begin
+          target = path.symlink? ? path.realpath : path
+          if target.directory?
+            toml_files = target.children.select { |f| f.extname == '.toml' }
+            toml_files.each do |f|
+              content = File.read(f) rescue ""
+              if content =~ /description\s*=\s*['"](.*?)['"]/
+                return $1
+              end
+            end
+          end
+        rescue
+        end
+      end
+    when 'plugins', 'plugin'
+      plugin_json = path.join("plugin.json")
+      if plugin_json.exist?
+        begin
+          data = JSON.parse(plugin_json.read)
+          return data['description'].to_s if data['description']
+        rescue
+        end
+      end
+    when 'rules', 'workflows', 'policies'
+      if path.exist?
+        content = path.read rescue ""
+        yaml_block = content[/^---\s*\n(.*?)\n---(\s*\n|$)/m, 1]
+        if yaml_block
+          parsed = YAML.safe_load(yaml_block) rescue {}
+          return parsed['description'].to_s if parsed['description']
+        end
+      end
+    end
+    nil
+  end
+
+  def match_entity?(path, entity_type, term)
+    return true if term.nil? || term.empty?
+    
+    basename = File.basename(path).downcase
+    return true if basename.include?(term.downcase)
+    
+    desc = entity_description(path, entity_type)
+    return true if desc && desc.downcase.include?(term.downcase)
+    
+    false
+  end
+
+  def get_mtime(path)
+    begin
+      target = File.symlink?(path) ? File.realpath(path) : path
+      if File.directory?(target)
+        skill_md = File.join(target, "SKILL.md")
+        if File.exist?(skill_md)
+          return File.mtime(skill_md)
+        end
+        latest_file = Dir.glob(File.join(target, "*")).max_by { |f| File.mtime(f) rescue Time.at(0) }
+        return File.mtime(latest_file) if latest_file
+      end
+      File.mtime(target)
+    rescue
+      Time.at(0)
+    end
   end
 end
 

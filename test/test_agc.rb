@@ -110,4 +110,41 @@ class TestAGC < Minitest::Test
     assert_match(/ai-skills-for-agy/, out)
     assert_match(/Duckie/, out)
   end
+
+  def test_parse_args_for_hooks
+    agc = AGC.new(['hooks'])
+    assert_equal 'hooks', agc.instance_variable_get(:@entity)
+  end
+
+  def test_parse_args_for_matrix
+    agc = AGC.new(['matrix'])
+    assert_equal 'matrix', agc.instance_variable_get(:@entity)
+  end
+
+  def test_hook_emojis
+    agc = AGC.new(['hooks'])
+    assert_equal '🛑', agc.send(:hook_emoji, 'stop')
+    assert_equal '▶️', agc.send(:hook_emoji, 'pre')
+    assert_equal '⏹️', agc.send(:hook_emoji, 'post')
+    assert_equal '🚀', agc.send(:hook_emoji, 'init')
+    assert_equal '🧠', agc.send(:hook_emoji, 'memory')
+    assert_equal '🔍', agc.send(:hook_emoji, 'filter')
+    assert_equal '🛡️', agc.send(:hook_emoji, 'security')
+    assert_equal '⏺️', agc.send(:hook_emoji, 'record')
+    assert_equal '✅', agc.send(:hook_emoji, 'validate')
+    assert_equal '💾', agc.send(:hook_emoji, 'save')
+    assert_equal '🪝', agc.send(:hook_emoji, 'unknown_hook_type')
+  end
+
+  def test_process_hooks_output_contains_global_and_local_paths
+    out, _err = capture_io do
+      begin
+        AGC.new(['hooks']).run
+      rescue SystemExit
+      end
+    end
+    
+    assert_match(/~\/\.gemini\/config\/hooks\.json/, out, "Should check global hooks config")
+    assert_match(/~\/\.gemini\/trusted_hooks\.json/, out, "Should check trusted hooks config")
+  end
 end

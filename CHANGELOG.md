@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2026-07-14
+
+### Added
+- 📊 Added `agc matrix` command to show a Markdown-compatible compatibility matrix mapping harness capabilities between Antigravity (`agy`) and Gemini CLI (`gc`).
+
+## [0.2.6] - 2026-07-14
+
+### Added
+- 🪝 Added `agc hooks` command to visualize Antigravity hooks from `hooks.json` and `trusted_hooks.json`.
+
+## [0.2.5] - 2026-07-14
+
+### Added
+- 🚀 Added support for Antigravity IDE and CLI config files (`antigravity-ide/mcp_config.json` and `antigravity-cli/mcp_config.json`) to global, local, and plugin configs in `bin/agc`.
+- 🙈 Ignored `seroter-hotels/` directory in `.gitignore`.
+- 🤖 Signed: Antigravity.
+
 ## [0.2.4] - 2026-06-24
 
 ### Added

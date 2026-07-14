@@ -222,6 +222,10 @@ class AGC
       end
     when 'mcp', 'mcps', 'mcp_servers', 'mcp_server'
       process_mcp
+    when 'hooks', 'hook'
+      process_hooks
+    when 'matrix'
+      process_matrix
     when 'all'
       process_all
     else
@@ -244,6 +248,8 @@ class AGC
     puts "  policies         Manage GC Policy Engine"
     puts "  plugins          Manage Antigravity/Gemini CLI plugins"
     puts "  mcp              Manage configured MCP servers"
+    puts "  hooks            Manage Antigravity hooks"
+    puts "  matrix           Show a compatibility matrix of capabilities"
     puts "\nActions:"
     puts "  list             (Default) List entities"
     puts "  search <term>    Search entities for a specific term"
@@ -921,6 +927,8 @@ class AGC
     global_files = [
       { path: '~/.gemini/settings.json', label: 'Gemini CLI Settings', visibility: [:gc] },
       { path: '~/.gemini/antigravity/mcp_config.json', label: 'Antigravity agy Settings', visibility: [:agy] },
+      { path: '~/.gemini/antigravity-ide/mcp_config.json', label: 'Antigravity IDE Settings', visibility: [:agy] },
+      { path: '~/.gemini/antigravity-cli/mcp_config.json', label: 'Antigravity CLI Settings', visibility: [:agy] },
       { path: '~/.gemini/config/mcp_config.json', label: 'Shared Gemini Config', visibility: [:gc, :agy] }
     ]
 
@@ -936,6 +944,8 @@ class AGC
       %w[.gemini _gemini gemini].each do |prefix|
         local_files << { path: "#{lp}/#{prefix}/settings.json", label: "Local #{prefix}/settings.json", visibility: [:gc] }
         local_files << { path: "#{lp}/#{prefix}/antigravity/mcp_config.json", label: "Local #{prefix}/antigravity/mcp_config.json", visibility: [:agy] }
+        local_files << { path: "#{lp}/#{prefix}/antigravity-ide/mcp_config.json", label: "Local #{prefix}/antigravity-ide/mcp_config.json", visibility: [:agy] }
+        local_files << { path: "#{lp}/#{prefix}/antigravity-cli/mcp_config.json", label: "Local #{prefix}/antigravity-cli/mcp_config.json", visibility: [:agy] }
         local_files << { path: "#{lp}/#{prefix}/config/mcp_config.json", label: "Local #{prefix}/config/mcp_config.json", visibility: [:gc, :agy] }
       end
     end
@@ -981,6 +991,30 @@ class AGC
                   global_files << cfg_entry_agy
                 else
                   local_files << cfg_entry_agy
+                end
+
+                cfg_entry_agy_ide = { 
+                  path: File.join(real_plugin_path, prefix, "antigravity-ide", "mcp_config.json"), 
+                  label: "Plugin #{plugin_name} Antigravity IDE mcp_config.json", 
+                  visibility: [:agy],
+                  context: context
+                }
+                if context == :global
+                  global_files << cfg_entry_agy_ide
+                else
+                  local_files << cfg_entry_agy_ide
+                end
+
+                cfg_entry_agy_cli = { 
+                  path: File.join(real_plugin_path, prefix, "antigravity-cli", "mcp_config.json"), 
+                  label: "Plugin #{plugin_name} Antigravity CLI mcp_config.json", 
+                  visibility: [:agy],
+                  context: context
+                }
+                if context == :global
+                  global_files << cfg_entry_agy_cli
+                else
+                  local_files << cfg_entry_agy_cli
                 end
 
                 cfg_entry_shared = { 
@@ -1128,6 +1162,88 @@ class AGC
       # ignore JSON parse errors
     end
     {}
+  end
+
+  def process_matrix
+    yes = "✅"
+    no = "❌"
+    
+    puts "| Capability | Antigravity (`agy`) | Gemini CLI (`gc`) |"
+    puts "| --- | --- | --- |"
+    puts "| Skills | #{yes} | #{yes} |"
+    puts "| Rules | #{yes} | #{no} |"
+    puts "| Workflows | #{yes} | #{no} |"
+    puts "| Commands | #{no} | #{yes} |"
+    puts "| Policies | #{no} | #{yes} |"
+    puts "| Plugins | #{yes} | #{yes} |"
+    puts "| MCP | #{yes} | #{yes} |"
+    puts "| Hooks | #{yes} | #{no} |"
+    puts ""
+  end
+
+  def process_hooks
+    if @options[:for] == :gc
+      puts "#{C_COMMENT}Gemini CLI does not support hooks.#{C_RESET}"
+      return
+    end
+
+    require 'json'
+    
+    puts "#{C_FOLDER}#{E_GLOBAL} ~/.gemini/config/hooks.json#{C_RESET}"
+    hooks_file = File.expand_path("~/.gemini/config/hooks.json")
+    if File.exist?(hooks_file)
+      begin
+        data = JSON.parse(File.read(hooks_file))
+        data.each do |hook_group, hooks_by_type|
+          puts "  #{C_SKILL}#{hook_group}#{C_RESET}"
+          hooks_by_type.each do |hook_type, hook_list|
+            emoji = hook_emoji(hook_type)
+            puts "    #{emoji} #{C_VERSION}#{hook_type}#{C_RESET}: #{hook_list.size} hook(s)"
+          end
+        end
+      rescue => e
+        puts "  #{E_BROKEN} Error parsing hooks.json: #{e.message}"
+      end
+    else
+      puts "  #{C_COMMENT}No hooks.json found.#{C_RESET}"
+    end
+    
+    puts ""
+    puts "#{C_FOLDER}#{E_GLOBAL} ~/.gemini/trusted_hooks.json#{C_RESET}"
+    trusted_file = File.expand_path("~/.gemini/trusted_hooks.json")
+    if File.exist?(trusted_file)
+      begin
+        data = JSON.parse(File.read(trusted_file))
+        data.each do |project_path, hooks|
+          puts "  #{C_SKILL}#{project_path.sub(ENV['HOME'], '~')}#{C_RESET}"
+          hooks.each do |hook|
+            type, cmd = hook.split(':', 2)
+            emoji = hook_emoji(type)
+            puts "    #{emoji} #{C_VERSION}#{type}#{C_RESET}: #{C_COMMENT}#{cmd}#{C_RESET}"
+          end
+        end
+      rescue => e
+        puts "  #{E_BROKEN} Error parsing trusted_hooks.json: #{e.message}"
+      end
+    else
+      puts "  #{C_COMMENT}No trusted_hooks.json found.#{C_RESET}"
+    end
+  end
+
+  def hook_emoji(type)
+    case type.to_s.downcase
+    when 'stop' then '🛑'
+    when 'preinvocation', 'pre', 'pre_tool' then '▶️'
+    when 'postinvocation', 'post', 'post_tool' then '⏹️'
+    when 'init' then '🚀'
+    when 'memory' then '🧠'
+    when 'filter' then '🔍'
+    when 'security' then '🛡️'
+    when 'record' then '⏺️'
+    when 'validate' then '✅'
+    when 'save' then '💾'
+    else '🪝'
+    end
   end
 
   def entity_description(path, entity_type)

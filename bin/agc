@@ -1228,6 +1228,28 @@ class AGC
     else
       puts "  #{C_COMMENT}No trusted_hooks.json found.#{C_RESET}"
     end
+
+    seen_paths = []
+    build_folders.each do |config|
+      next if config[:context] != :local
+      base_path = File.expand_path(config[:path])
+      next if seen_paths.include?(base_path)
+      seen_paths << base_path
+      
+      hooks_dir = File.join(base_path, 'hooks')
+      if File.directory?(hooks_dir)
+        scripts = Dir.children(hooks_dir).select { |f| File.file?(File.join(hooks_dir, f)) && !f.start_with?('.') }.sort
+        next if scripts.empty?
+        
+        short_path = hooks_dir.sub(ENV['HOME'], '~')
+        puts "\n#{C_FOLDER}#{E_LOCAL} #{short_path}#{C_RESET}"
+        scripts.each do |script|
+          name_without_ext = File.basename(script, '.*')
+          emoji = hook_emoji(name_without_ext)
+          puts "  #{emoji} #{C_VERSION}#{name_without_ext}#{C_RESET}: #{C_COMMENT}#{script}#{C_RESET}"
+        end
+      end
+    end
   end
 
   def hook_emoji(type)

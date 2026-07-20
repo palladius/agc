@@ -187,6 +187,8 @@ class AGC
     when 'skills', 'skill'
       if @action == 'install'
         install_item(@search_term, @install_target, 'skills')
+      elsif @action == 'show'
+        show_skill(@search_term)
       else
         process_skills('skills')
       end
@@ -314,7 +316,7 @@ class AGC
     
     # If the second arg is an action, capture it
     idx = 1
-    if remaining[idx] && ['list', 'search', 'install'].include?(remaining[idx])
+    if remaining[idx] && ['list', 'search', 'install', 'show'].include?(remaining[idx])
       @action = remaining[idx]
       idx += 1
     end
@@ -552,6 +554,144 @@ class AGC
     end
     
     puts "\n#{E_SPARKLE} Successfully installed #{C_MATCH}#{item_name}#{C_RESET}."
+  end
+
+  def print_tree(path, prefix = "")
+    dir = Pathname.new(path)
+    children = dir.children.sort_by do |c|
+      score = if c.basename.to_s == 'SKILL.md'
+                0
+              elsif c.directory?
+                2
+              else
+                1
+              end
+      [score, c.basename.to_s]
+    end
+
+    children.each_with_index do |child, index|
+      is_last = (index == children.size - 1)
+      connector = is_last ? "└── " : "├── "
+      
+      emoji = "📄"
+      color = C_RESET
+      
+      if child.basename.to_s == 'SKILL.md'
+        emoji = "✨"
+        color = C_MATCH
+      elsif child.directory?
+        emoji = "📁"
+        color = C_FOLDER
+      else
+        ext = child.extname.downcase
+        case ext
+        when '.rb'
+          emoji = "💎"
+          color = C_SKILL
+        when '.py'
+          emoji = "🐍"
+          color = C_SKILL
+        when '.sh', '.bash', '.zsh'
+          emoji = "💻"
+          color = C_SKILL
+        when '.md', '.txt'
+          emoji = "📝"
+          color = C_WHITE
+        when '.json', '.yaml', '.yml', '.toml'
+          emoji = "⚙️"
+          color = C_COMMENT
+        when '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'
+          emoji = "🖼️"
+          color = C_SYMLINK
+        when '.mp4', '.mov', '.avi', '.mkv'
+          emoji = "🎥"
+          color = C_SYMLINK
+        when '.mp3', '.wav', '.ogg', '.m4a'
+          emoji = "🎵"
+          color = C_SYMLINK
+        when '.csv', '.tsv'
+          emoji = "📊"
+          color = C_WHITE
+        else
+          emoji = "📄"
+          color = C_RESET
+        end
+      end
+      
+      puts "#{prefix}#{connector}#{emoji} #{color}#{child.basename}#{C_RESET}"
+      
+      if child.directory?
+        new_prefix = prefix + (is_last ? "    " : "│   ")
+        print_tree(child, new_prefix)
+      end
+    end
+  end
+
+  def show_skill(item_name)
+    if item_name.nil? || item_name.empty?
+      puts "#{C_BROKEN}❌ Error: Please specify the skill name to show.#{C_RESET}"
+      exit 1
+    end
+
+    # Find candidate skill folders
+    candidates = []
+    seen_paths = []
+    
+    build_folders.each do |config|
+      search_path = File.expand_path(File.join(config[:path], 'skills'))
+      search_path = File.expand_path(config[:path]) if config[:path].end_with?('.agents')
+      search_path = File.expand_path(File.join(config[:path], 'skills')) unless search_path.end_with?('skills')
+      
+      next if seen_paths.include?(search_path)
+      seen_paths << search_path
+      
+      dir = Pathname.new(search_path)
+      next unless dir.directory?
+
+      begin
+        dir.children.each do |c|
+          is_match = (c.directory? || c.symlink?) && c.basename.to_s == item_name
+          candidates << c if is_match
+        end
+      rescue Errno::EPERM, Errno::EACCES
+        # Skip directories without permission
+      end
+    end
+
+    if candidates.empty?
+      puts "#{E_BROKEN} No existing skill found named '#{C_MATCH}#{item_name}#{C_RESET}' across known folders."
+      exit 1
+    end
+
+    # If there are multiple candidates, pick the first one for now, or maybe prompt?
+    # Usually we want the active one. The first found based on build_folders order is usually the right one.
+    skill_path = candidates.first
+
+    puts "\n#{E_SPARKLE} #{C_FOLDER}Skill:#{C_RESET} #{C_MATCH}#{item_name}#{C_RESET}"
+    puts "#{C_COMMENT}📍 #{skill_path.to_s.sub(ENV['HOME'], '~')}#{C_RESET}\n\n"
+    
+    print_tree(skill_path)
+
+    puts "\n"
+    print "#{C_VERSION}Press SPACE (or any key) to read SKILL.md with glow...#{C_RESET}"
+    if STDIN.tty?
+      begin
+        system("stty raw -echo")
+        STDIN.getc
+      ensure
+        system("stty -raw echo")
+      end
+    else
+      puts "\n(Skipping wait in non-TTY environment)"
+    end
+    puts "\n\n"
+    
+    skill_md = File.join(skill_path, "SKILL.md")
+    if File.exist?(skill_md)
+      system("glow \"#{skill_md}\"")
+    else
+      puts "#{C_BROKEN}❌ SKILL.md not found in #{skill_path}#{C_RESET}"
+    end
   end
 
   def process_skills(sub_folder)

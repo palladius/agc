@@ -431,9 +431,10 @@ class AGC
     seen_paths = []
     
     build_folders.each do |config|
-      search_path = File.expand_path(File.join(config[:path], entity_type))
-      search_path = File.expand_path(config[:path]) if config[:path].end_with?('.agents') && ['skills', 'commands', 'plugins'].include?(entity_type)
-      search_path = File.expand_path(File.join(config[:path], entity_type)) unless search_path.end_with?(entity_type)
+      search_path = File.expand_path(config[:path])
+      unless search_path.end_with?('.agents') && ['skills', 'commands', 'plugins'].include?(entity_type)
+        search_path = File.join(search_path, entity_type) unless search_path.end_with?(entity_type)
+      end
       
       next if seen_paths.include?(search_path)
       seen_paths << search_path
@@ -558,7 +559,8 @@ class AGC
 
   def print_tree(path, prefix = "")
     dir = Pathname.new(path)
-    children = dir.children.sort_by do |c|
+    # Filter out hidden files like .DS_Store
+    children = dir.children.reject { |c| c.basename.to_s.start_with?('.') }.sort_by do |c|
       score = if c.basename.to_s == 'SKILL.md'
                 0
               elsif c.directory?
@@ -638,9 +640,10 @@ class AGC
     seen_paths = []
     
     build_folders.each do |config|
-      search_path = File.expand_path(File.join(config[:path], 'skills'))
-      search_path = File.expand_path(config[:path]) if config[:path].end_with?('.agents')
-      search_path = File.expand_path(File.join(config[:path], 'skills')) unless search_path.end_with?('skills')
+      search_path = File.expand_path(config[:path])
+      unless search_path.end_with?('.agents')
+        search_path = File.join(search_path, 'skills') unless search_path.end_with?('skills')
+      end
       
       next if seen_paths.include?(search_path)
       seen_paths << search_path
@@ -688,7 +691,13 @@ class AGC
     
     skill_md = File.join(skill_path, "SKILL.md")
     if File.exist?(skill_md)
-      system("glow \"#{skill_md}\"")
+      if system("command -v glow > /dev/null 2>&1")
+        system("glow \"#{skill_md}\"")
+      elsif system("command -v bat > /dev/null 2>&1")
+        system("bat \"#{skill_md}\"")
+      else
+        system("cat \"#{skill_md}\"")
+      end
     else
       puts "#{C_BROKEN}❌ SKILL.md not found in #{skill_path}#{C_RESET}"
     end

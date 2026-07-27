@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.11] - 2026-07-20
+
+### Fixed
+- 🐛 Fixed a logical bug in `show_skill` and `install_item` where `search_path` was incorrectly overwritten.
+- 🙈 Filtered out hidden files (like `.DS_Store`) from the `agc skills show` colorful tree output.
+- 🛡️ Added a fallback to `bat` or `cat` for `agc skills show` when `glow` is not installed.
+
 ## [0.2.10] - 2026-07-20
 
 ### Added

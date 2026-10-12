@@ -11,6 +11,8 @@ require 'socket'
 require 'digest'
 require 'yaml'
 require 'set'
+require 'time'
+require 'json'
 
 Encoding.default_external = Encoding::UTF_8
 
@@ -170,17 +172,25 @@ class AGC
   end
 
   def run
-    puts "#{E_SPARKLE} AntiGravity/GeminiCLI tool (AGC) #{E_SPARKLE} [Entity: #{@entity || 'NONE'}]\n\n"
+    unless @options[:format] == :json
+      puts "#{E_SPARKLE} AntiGravity/GeminiCLI tool (AGC) #{E_SPARKLE} [Entity: #{@entity || 'NONE'}]\n\n"
+    end
     
     if @entity.nil?
-      show_help
-      exit 1
+      if @options[:format] == :json
+        @entity = 'all'
+      else
+        show_help
+        exit 1
+      end
     end
 
-    if @search_term
-      puts "#{E_SEARCH} Searching for #{@entity} matching '#{C_MATCH}#{@search_term}#{C_RESET}'...\n\n"
-    elsif @options[:for]
-      puts "#{E_SEARCH} Showing #{@entity} visible to '#{C_MATCH}#{@options[:for]}#{C_RESET}'...\n\n"
+    unless @options[:format] == :json
+      if @search_term
+        puts "#{E_SEARCH} Searching for #{@entity} matching '#{C_MATCH}#{@search_term}#{C_RESET}'...\n\n"
+      elsif @options[:for]
+        puts "#{E_SEARCH} Showing #{@entity} visible to '#{C_MATCH}#{@options[:for]}#{C_RESET}'...\n\n"
+      end
     end
 
     case @entity
@@ -263,10 +273,92 @@ class AGC
     puts "  --for <system>    Target system context (gc, agy)"
     puts "  --global          Show only globally configured items"
     puts "  --local           Show only locally configured (workspace) items"
+    puts "  --json, --format json Format output as machine-readable JSON"
+    puts "  --ai-help         Show AI-optimized Markdown documentation and instructions"
     puts "  -h, --help        Show this help message"
     puts "\nExamples:"
     puts "  agc skills install journal-image-manager .            # Install a skill locally"
     puts "  agc rules install carlessian-justfile.md --global     # Install a rule globally"
+    puts "  agc skills niccolo --json                             # Output skills in JSON"
+    puts "  agc --ai-help                                         # AI agent usage guide"
+  end
+
+  def show_ai_help
+    puts <<~MARKDOWN
+      # 🤖 AntiGravity/GeminiCLI tool (AGC) — AI Agent Guide
+
+      `agc` is Riccardo's unified CLI management and discovery tool for AI coding agents (Gemini CLI, Antigravity, Claude Code).
+      It indexes and queries skills, rules, workflows, MCP servers, hooks, and plugins across local and global scopes.
+
+      ## 📍 Script Location, Update & MD5 Checksum
+      - **Binary Location**: `~/git/agc/bin/agc` (symlinked to `~/git/gic/bin/agc` / `$GIC/bin/agc`)
+      - **Repository**: `https://github.com/palladius/agc` (`~/git/agc`)
+      - **How to update (`git pull`)**:
+        ```bash
+        git -C ~/git/agc pull
+        # or if updating GIC:
+        git -C ~/git/gic pull
+        ```
+      - **How to get the MD5 of `agc` itself**:
+        ```bash
+        # macOS:
+        md5 $(which agc)
+        # Linux / bash:
+        md5sum $(which agc)
+        ```
+      - **Upstream Skills Catalog**: `~/git/gemini-cli-palladius-public-goodies/skills/` (shared public repo)
+      - **Flattened Catalog**: `~/git/skillume/skills/` (symlinked/flattened catalog)
+      - **Local Workspace Skills**: `<workspace>/.agents/skills/` or `<workspace>/.gemini/skills/`
+      - **Related Skill**: `create-cli-best-practices`
+
+      ## 🧠 Best Practices for AI Agents
+
+      ### 1. Machine-Readable JSON (`--json` or `--format json`)
+      Always use `--json` or `--format json` for reliable, programmatic parsing:
+      ```bash
+      agc skills <query> --json
+      agc rules <query> --format json
+      agc all --json
+      ```
+      The JSON output contains:
+      - `name`: entity name
+      - `type`: `skill`, `rule`, `workflow`, `plugin`, `policy`, `mcp`
+      - `version`: version string (e.g. `0.2.1`)
+      - `path`: absolute path
+      - `context`: `local` or `global`
+      - `is_symlink`: boolean
+      - `target_path`: realpath if symlink
+      - `md5`: full 32-character MD5 hex digest of `SKILL.md` (or file content)
+      - `md5_short`: 5-character MD5 prefix (`#<hash>`)
+      - `line_count`: number of lines in `SKILL.md` / markdown
+      - `description`: extracted description
+      - `mtime`: ISO 8601 modification timestamp
+
+      ### 2. Drift & Identity Detection (`-a` / `--all` or `--json`)
+      When verifying whether a local skill in a repository matches the upstream version in `skillume` or `public-goodies`:
+      ```bash
+      agc skills <skill-name> -a
+      # or programmatically with jq:
+      agc skills <skill-name> --json | jq '.[].md5_short'
+      ```
+      - The `md5` / `md5_short` hash is computed directly from `SKILL.md`.
+      - Identical hashes indicate identical `SKILL.md` definitions.
+      - Always inspect `references/` or run `diff -r` if you suspect drift in supporting reference documentation.
+
+      ### 3. Fast Discovery
+      Instead of scanning file systems recursively with `find` or `grep`:
+      ```bash
+      agc skills <search_term> --json
+      agc rules <search_term> --json
+      agc workflows <search_term> --json
+      agc mcp --json
+      ```
+
+      ### 4. Scope Filtering
+      - Use `--local` to inspect only the current repository / worktree.
+      - Use `--global` to inspect only machine-wide skills and rules.
+      - Use `--for agy` or `--for gc` to filter capabilities tailored to Antigravity or Gemini CLI.
+    MARKDOWN
   end
 
   def parse_args!
@@ -279,9 +371,22 @@ class AGC
         next
       end
       case arg
+      when '--ai-help', 'ai-help'
+        show_ai_help
+        exit 0
       when '--help', '-h'
         show_help
         exit 0
+      when '--json'
+        @options[:format] = :json
+      when '--format=json'
+        @options[:format] = :json
+      when '--format'
+        val = @args[i+1]
+        if val
+          @options[:format] = val.downcase.to_sym
+          skip_next = true
+        end
       when '--all', '-a', '--verbose', '-v'
         @options[:all] = true
         @options[:verbose] = true
@@ -340,6 +445,7 @@ class AGC
     is_work_machine = ['derek', 'ricc-mac'].include?(hostname) || hostname.include?(".corp.google.com")
     
     seen_paths = []
+    json_results = [] if @options[:format] == :json
 
     build_folders.each do |config|
       next if @options[:for] && !config[:visibility].include?(@options[:for])
@@ -397,22 +503,38 @@ class AGC
       
       next if folder_elements.empty?
       
-      short_path = base_path.sub(ENV['HOME'], '~')
-      context_emoji = config[:context] == :global ? E_GLOBAL : E_LOCAL
-      name = config[:name] || config[:comment]
-      puts "#{C_FOLDER}#{context_emoji} #{name} [#{short_path}]#{C_RESET}"
-
-      folder_elements.each do |element|
-        prefix = "#{element[:sub_folder]}/".rjust(10)
-        if element[:type] == :skill
-           process_single_skill(element[:path], prefix, element[:sub_folder])
-        elsif element[:type] == :plugin
-           process_single_plugin(element[:path], prefix)
-        else
-           process_single_markdown(element[:path], element[:emoji], prefix)
+      if @options[:format] == :json
+        folder_elements.each do |element|
+          if element[:type] == :skill
+            json_results << extract_skill_data(element[:path], config, element[:sub_folder])
+          elsif element[:type] == :plugin
+            json_results << extract_plugin_data(element[:path], config)
+          else
+            json_results << extract_file_data(element[:path], config, element[:sub_folder])
+          end
         end
+      else
+        short_path = base_path.sub(ENV['HOME'], '~')
+        context_emoji = config[:context] == :global ? E_GLOBAL : E_LOCAL
+        name = config[:name] || config[:comment]
+        puts "#{C_FOLDER}#{context_emoji} #{name} [#{short_path}]#{C_RESET}"
+
+        folder_elements.each do |element|
+          prefix = "#{element[:sub_folder]}/".rjust(10)
+          if element[:type] == :skill
+             process_single_skill(element[:path], prefix, element[:sub_folder])
+          elsif element[:type] == :plugin
+             process_single_plugin(element[:path], prefix)
+          else
+             process_single_markdown(element[:path], element[:emoji], prefix)
+          end
+        end
+        puts ""
       end
-      puts ""
+    end
+
+    if @options[:format] == :json
+      puts JSON.pretty_generate(json_results)
     end
   end
 
@@ -703,10 +825,196 @@ class AGC
     end
   end
 
+  def extract_skill_data(skill, config, sub_folder = 'skills')
+    skill_name = skill.basename.to_s
+    is_link = skill.symlink?
+    target_path = nil
+    if is_link
+      begin
+        target_path = skill.realpath.to_s
+      rescue
+      end
+    end
+
+    skill_md = skill.join("SKILL.md")
+    version = nil
+    line_count = 0
+    content = ""
+    description = nil
+    
+    if skill_md.exist?
+      content = skill_md.read rescue ""
+      line_count = content.lines.count
+      yaml_block = content[/^---\s*\n(.*?)\n---(\s*\n|$)/m, 1]
+      if yaml_block
+        parsed = YAML.safe_load(yaml_block) rescue {}
+        version = parsed['version'] || parsed.dig('metadata', 'version')
+        description = parsed['description']
+      end
+      if version.nil? && content =~ /^\s*version:\s*(.*)$/
+        version = $1.strip
+      end
+    else
+      begin
+        target = is_link ? skill.realpath : skill
+        if target.directory?
+          toml_files = target.children.select { |f| f.extname == '.toml' }
+          if !toml_files.empty?
+            line_count = toml_files.map { |f| File.read(f).lines.count rescue 0 }.sum
+            toml_files.each do |f|
+              c = File.read(f) rescue ""
+              if c =~ /description\s*=\s*['"](.*?)['"]/
+                description = $1
+                break
+              end
+            end
+          end
+        end
+      rescue
+      end
+    end
+
+    seed = content.empty? ? skill_name : content
+    full_md5 = Digest::MD5.hexdigest(seed)
+    mtime = get_mtime(skill)
+
+    {
+      name: skill_name,
+      type: 'skill',
+      path: skill.to_s,
+      context: config[:context].to_s,
+      folder: config[:path],
+      is_symlink: is_link,
+      target_path: target_path,
+      version: version ? version.to_s : nil,
+      description: description,
+      line_count: line_count,
+      md5: full_md5,
+      md5_short: full_md5[0..4],
+      mtime: (mtime && mtime > Time.at(0)) ? mtime.iso8601 : nil
+    }
+  end
+
+  def extract_file_data(path, config, folder_name)
+    basename = path.basename.to_s
+    name = path.basename('.*').to_s
+    is_link = path.symlink?
+    target_path = nil
+    if is_link
+      begin
+        target_path = path.realpath.to_s
+      rescue
+      end
+    end
+
+    line_count = 0
+    version = nil
+    description = nil
+    broken = false
+    content = ""
+
+    begin
+      target_file = is_link ? path.realpath : path
+      if target_file.exist?
+        content = File.read(target_file) rescue ""
+        line_count = content.lines.count
+        
+        yaml_block = content[/^---\s*\n(.*?)\n---(\s*\n|$)/m, 1]
+        if yaml_block
+          parsed = YAML.safe_load(yaml_block) rescue {}
+          ver = parsed.dig('metadata', 'version') || parsed['version']
+          version = ver.to_s if ver
+          description = parsed['description']
+        end
+      else
+        broken = true
+      end
+    rescue
+      broken = true
+    end
+
+    seed = (!broken && !content.empty?) ? content : basename
+    full_md5 = Digest::MD5.hexdigest(seed)
+    mtime = get_mtime(path)
+
+    entity_type = case folder_name
+                  when 'rules' then 'rule'
+                  when 'workflows' then 'workflow'
+                  when 'policies' then 'policy'
+                  else folder_name.chomp('s')
+                  end
+
+    {
+      name: name,
+      file: basename,
+      type: entity_type,
+      path: path.to_s,
+      context: config[:context].to_s,
+      folder: config[:path],
+      is_symlink: is_link,
+      target_path: target_path,
+      broken: broken,
+      version: version,
+      description: description,
+      line_count: line_count,
+      md5: full_md5,
+      md5_short: full_md5[0..4],
+      mtime: (mtime && mtime > Time.at(0)) ? mtime.iso8601 : nil
+    }
+  end
+
+  def extract_plugin_data(plugin, config)
+    plugin_name = plugin.basename.to_s
+    is_link = plugin.symlink?
+    target_path = nil
+    if is_link
+      begin
+        target_path = plugin.realpath.to_s
+      rescue
+      end
+    end
+    desc = nil
+    version = nil
+
+    plugin_json_path = plugin.join("plugin.json")
+    if plugin_json_path.exist?
+      begin
+        data = JSON.parse(plugin_json_path.read)
+        desc = data['description']
+        version = data['version']
+      rescue
+      end
+    end
+
+    installed_version_path = plugin.join("installed_version.json")
+    if version.nil? && installed_version_path.exist?
+      begin
+        data = JSON.parse(installed_version_path.read)
+        version = data['version']
+      rescue
+      end
+    end
+
+    mtime = get_mtime(plugin)
+    {
+      name: plugin_name,
+      type: 'plugin',
+      path: plugin.to_s,
+      context: config[:context].to_s,
+      folder: config[:path],
+      is_symlink: is_link,
+      target_path: target_path,
+      version: version ? version.to_s : nil,
+      description: desc,
+      mtime: (mtime && mtime > Time.at(0)) ? mtime.iso8601 : nil
+    }
+  end
+
   def process_skills(sub_folder)
     hostname = Socket.gethostname
     is_work_machine = ['derek', 'ricc-mac'].include?(hostname) || hostname.include?(".corp.google.com")
     seen_paths = []
+    json_results = [] if @options[:format] == :json
 
     build_folders.each do |config|
       next if @options[:for] && !config[:visibility].include?(@options[:for])
@@ -735,22 +1043,32 @@ class AGC
 
       next if skills.empty?
 
-      # Header
-      header = "#{C_FOLDER}#{config[:context] == :global ? E_GLOBAL : E_LOCAL} #{config[:path]}/#{sub_folder}#{C_RESET}"
-      if config[:comment]
-        comment_text = config[:comment]
-        if config[:context] == :local
-          pwd = Dir.pwd.gsub(ENV['HOME'], '~')
-          comment_text += " #{C_WHITE}on#{C_RESET} #{C_SYMLINK}#{pwd}#{C_COMMENT}"
+      if @options[:format] == :json
+        skills.each do |skill|
+          json_results << extract_skill_data(skill, config, sub_folder)
         end
-        header += " #{C_COMMENT}# #{comment_text}#{C_RESET}"
-      end
-      puts header
+      else
+        # Header
+        header = "#{C_FOLDER}#{config[:context] == :global ? E_GLOBAL : E_LOCAL} #{config[:path]}/#{sub_folder}#{C_RESET}"
+        if config[:comment]
+          comment_text = config[:comment]
+          if config[:context] == :local
+            pwd = Dir.pwd.gsub(ENV['HOME'], '~')
+            comment_text += " #{C_WHITE}on#{C_RESET} #{C_SYMLINK}#{pwd}#{C_COMMENT}"
+          end
+          header += " #{C_COMMENT}# #{comment_text}#{C_RESET}"
+        end
+        puts header
 
-      skills.each do |skill|
-        process_single_skill(skill, nil, sub_folder)
+        skills.each do |skill|
+          process_single_skill(skill, nil, sub_folder)
+        end
+        puts ""
       end
-      puts ""
+    end
+
+    if @options[:format] == :json
+      puts JSON.pretty_generate(json_results)
     end
   end
 
@@ -850,6 +1168,7 @@ class AGC
   def process_file_entity(folder_name, emoji, ext)
     total_broken_links = 0
     seen_paths = []
+    json_results = [] if @options[:format] == :json
 
     build_folders.each do |config|
       next if @options[:for] && !config[:visibility].include?(@options[:for])
@@ -872,15 +1191,26 @@ class AGC
 
       next if items.empty?
 
-      short_path = expanded_path.sub(ENV['HOME'], '~')
-      context_emoji = config[:context] == :global ? E_GLOBAL : E_LOCAL
-      puts "#{C_FOLDER}#{context_emoji} #{config[:comment]} [#{short_path}]#{C_RESET}"
+      if @options[:format] == :json
+        items.each do |path|
+          json_results << extract_file_data(path, config, folder_name)
+        end
+      else
+        short_path = expanded_path.sub(ENV['HOME'], '~')
+        context_emoji = config[:context] == :global ? E_GLOBAL : E_LOCAL
+        puts "#{C_FOLDER}#{context_emoji} #{config[:comment]} [#{short_path}]#{C_RESET}"
 
-      items.each do |path|
-        broken_detected = process_single_markdown(path, emoji)
-        total_broken_links += 1 if broken_detected
+        items.each do |path|
+          broken_detected = process_single_markdown(path, emoji)
+          total_broken_links += 1 if broken_detected
+        end
+        puts ""
       end
-      puts ""
+    end
+
+    if @options[:format] == :json
+      puts JSON.pretty_generate(json_results)
+      return
     end
 
     if total_broken_links > 0 && !@options[:fix_broken]
@@ -965,6 +1295,7 @@ class AGC
 
   def process_plugins(sub_folder)
     seen_paths = []
+    json_results = [] if @options[:format] == :json
 
     build_folders.each do |config|
       next if @options[:for] && !config[:visibility].include?(@options[:for])
@@ -987,21 +1318,31 @@ class AGC
 
       next if plugins.empty?
 
-      header = "#{C_FOLDER}#{config[:context] == :global ? E_GLOBAL : E_LOCAL} #{config[:path]}/#{sub_folder}#{C_RESET}"
-      if config[:comment]
-        comment_text = config[:comment]
-        if config[:context] == :local
-          pwd = Dir.pwd.gsub(ENV['HOME'], '~')
-          comment_text += " #{C_WHITE}on#{C_RESET} #{C_SYMLINK}#{pwd}#{C_COMMENT}"
+      if @options[:format] == :json
+        plugins.each do |plugin|
+          json_results << extract_plugin_data(plugin, config)
         end
-        header += " #{C_COMMENT}# #{comment_text}#{C_RESET}"
-      end
-      puts header
+      else
+        header = "#{C_FOLDER}#{config[:context] == :global ? E_GLOBAL : E_LOCAL} #{config[:path]}/#{sub_folder}#{C_RESET}"
+        if config[:comment]
+          comment_text = config[:comment]
+          if config[:context] == :local
+            pwd = Dir.pwd.gsub(ENV['HOME'], '~')
+            comment_text += " #{C_WHITE}on#{C_RESET} #{C_SYMLINK}#{pwd}#{C_COMMENT}"
+          end
+          header += " #{C_COMMENT}# #{comment_text}#{C_RESET}"
+        end
+        puts header
 
-      plugins.each do |plugin|
-        process_single_plugin(plugin, nil)
+        plugins.each do |plugin|
+          process_single_plugin(plugin, nil)
+        end
+        puts ""
       end
-      puts ""
+    end
+
+    if @options[:format] == :json
+      puts JSON.pretty_generate(json_results)
     end
   end
 
@@ -1241,7 +1582,34 @@ class AGC
     end
 
     if valid_configs.empty?
-      puts "No configured MCP servers found matching your criteria."
+      if @options[:format] == :json
+        puts "[]"
+      else
+        puts "No configured MCP servers found matching your criteria."
+      end
+      return
+    end
+
+    if @options[:format] == :json
+      json_results = []
+      valid_configs.each do |cfg|
+        servers = parse_mcp_file(cfg[:path])
+        servers = servers.select { |k, v| k.downcase.include?(@search_term.downcase) } if @search_term
+        servers.each do |name, info|
+          json_results << {
+            name: name,
+            type: 'mcp',
+            config_file: cfg[:path],
+            context: cfg[:context].to_s,
+            command: info['command'],
+            args: info['args'],
+            url: info['httpUrl'] || info['url'],
+            env: info['env'],
+            headers: info['headers']
+          }
+        end
+      end
+      puts JSON.pretty_generate(json_results)
       return
     end
 
@@ -1314,6 +1682,21 @@ class AGC
   end
 
   def process_matrix
+    if @options[:format] == :json
+      matrix = [
+        { capability: 'Skills', agy: true, gc: true },
+        { capability: 'Rules', agy: true, gc: false },
+        { capability: 'Workflows', agy: true, gc: false },
+        { capability: 'Commands', agy: false, gc: true },
+        { capability: 'Policies', agy: false, gc: true },
+        { capability: 'Plugins', agy: true, gc: true },
+        { capability: 'MCP', agy: true, gc: true },
+        { capability: 'Hooks', agy: true, gc: false }
+      ]
+      puts JSON.pretty_generate(matrix)
+      return
+    end
+
     yes = "✅"
     no = "❌"
     

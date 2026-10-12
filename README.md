@@ -19,23 +19,30 @@ Example of `agc skills list` (also shows GC Policies!):
 
 To install `agc` and make it available in your shell:
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/palladius/agc.git
-   cd agc
-   ```
+### Option 1: Install via RubyGems (Recommended)
+You can build and install `agc` directly from source using the gemspec:
+```bash
+gem build agc.gemspec
+gem install agc-*.gem
+```
 
-2. **Add to your PATH:**
-   Add the following line to your `~/.bashrc`, `~/.zshrc`, or equivalent:
-   ```bash
-   export PATH="$PATH:$(pwd)/bin"
-   ```
-   *Note: Ensure you provide the absolute path to the `bin` directory.*
+### Option 2: Symlink to an existing bin directory
+If you prefer not to modify your `$PATH`, you can symlink the executable to a local bin directory that is already in your path (such as `~/.local/bin` or `~/bin`):
+```bash
+ln -s $(pwd)/bin/agc ~/.local/bin/agc
+```
 
-3. **Verify Installation:**
-   ```bash
-   agc --help
-   ```
+### Option 3: Add to your PATH
+Add the repository's `bin/` directory to your `~/.bashrc`, `~/.zshrc`, or equivalent:
+```bash
+export PATH="$PATH:$(pwd)/bin"
+```
+*Note: Ensure you provide the absolute path to the `bin` directory.*
+
+### Verify Installation:
+```bash
+agc --help
+```
 
 ### Prerequisites
 - **Ruby:** `agc` is written in Ruby and requires a modern Ruby environment.

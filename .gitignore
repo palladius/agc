@@ -5,3 +5,4 @@ _gemini/
 agents/
 gemini/
 seroter-hotels/
+*.gem

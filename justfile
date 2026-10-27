@@ -9,6 +9,12 @@ list: default
 test:
 	ruby -I lib:test test/test_agc.rb
 
+gem-build:
+	gem build agc.gemspec
+
+gem-install: gem-build
+	gem install agc-$$(cat VERSION).gem
+
 skills-equivalent:
 	bin/agc skills list
 
